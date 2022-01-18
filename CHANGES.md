@@ -6,6 +6,7 @@
 
 ### :sparkles: New features
 
+- Add update components in bulk option in context menu [Taiga #1975](https://tree.taiga.io/project/penpot/us/1975).
 - Add an option to hide artboards names on the viewport [Taiga #2034](https://tree.taiga.io/project/penpot/issue/2034).
 - Add new options for zoom widget in workspace and viewer mode [Taiga #896](https://tree.taiga.io/project/penpot/us/896).
 - Allow decimals on stroke width and positions [Taiga #2035](https://tree.taiga.io/project/penpot/issue/2035).
