@@ -499,3 +499,36 @@
           size (dom/get-client-size prnt)]
       ;; We schedule the event so it fires after `initialize-page` event
       (timers/schedule #(st/emit! (dw/update-viewport-size size)))))))
+
+(defn on-scroll-down
+  [{:keys [id blocked hidden type]} selected edition drawing-tool text-editing?
+   node-editing? drawing-path? create-comment? space? viewport-ref zoom]
+  (mf/use-callback
+   (mf/deps id blocked hidden type selected edition drawing-tool text-editing?
+            node-editing? drawing-path? create-comment? space? viewport-ref zoom)
+   (fn [bevent]
+     (dom/stop-propagation bevent)
+
+     (let [event  (.-nativeEvent bevent)
+           ctrl?  (kbd/ctrl? event)
+           shift? (kbd/shift? event)
+           alt?   (kbd/alt? event)]
+
+       (st/emit! (ms/->MouseEvent :down ctrl? shift? alt?))
+       (st/emit! (dw/start-vertical-scrolling))))))
+
+(defn on-scroll-up
+  []
+  (mf/use-callback
+   (fn [event]
+     (dom/stop-propagation event)
+
+     (let [event (.-nativeEvent event)
+           ctrl? (kbd/ctrl? event)
+           shift? (kbd/shift? event)
+           alt? (kbd/alt? event)]
+
+       (dom/prevent-default event)
+
+       (st/emit! (dw/finish-vertical-scrolling)
+                 (dw/finish-zooming))))))

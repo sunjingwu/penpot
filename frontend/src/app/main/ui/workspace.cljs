@@ -39,7 +39,6 @@
         vbox  (obj/get props "vbox")
         vport (obj/get props "vport")
         colorpalette? (obj/get props "colorpalette?")]
-
     [:*
      [:div.empty-rule-square]
      [:& horizontal-rule {:zoom zoom

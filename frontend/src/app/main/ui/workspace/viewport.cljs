@@ -9,7 +9,10 @@
    [app.common.colors :as clr]
    [app.common.data :as d]
    [app.common.geom.shapes :as gsh]
+   [app.common.uuid :as uuid]
+   [app.main.data.workspace.state-helpers :as wsh]
    [app.main.refs :as refs]
+   [app.main.store :as st]
    [app.main.ui.context :as ctx]
    [app.main.ui.measurements :as msr]
    [app.main.ui.shapes.embed :as embed]
@@ -90,6 +93,7 @@
         move-stream       (mf/use-memo #(rx/subject))
 
         zoom              (d/check-num zoom 1)
+        inv-zoom          (/ 1 zoom)
         drawing-tool      (:tool drawing)
         drawing-obj       (:object drawing)
 
@@ -98,6 +102,22 @@
 
         ;; Only when we have all the selected shapes in one frame
         selected-frame    (when (= (count selected-frames) 1) (get base-objects (first selected-frames)))
+
+
+        root-shapes   (get-in base-objects [uuid/zero :shapes])
+        shapes        (->> root-shapes (mapv #(get base-objects %)))
+        base-objects-rect (gsh/selection-rect shapes)
+
+        top-offset (max 0 (- (:y vbox) (:y base-objects-rect)))
+        bottom-offset (max 0 (- (:y2 base-objects-rect) (+ (:y vbox) (:height vbox))))
+        vertical-offset (+ top-offset bottom-offset)
+
+        scrollbar-x       (+ (:x vbox) (:width vbox) (* inv-zoom -40) #_(* zoom -20))
+        scrollbar-height  (- (:height vbox) vertical-offset)
+        scrollbar-height  (max scrollbar-height (* inv-zoom 100))
+        scrollbar-y       (+ (:y vbox) top-offset)
+        scrollbar-y       (max scrollbar-y (+ (:y vbox) (* inv-zoom 40)))
+        scrollbar-y       (min scrollbar-y (+ (:y vbox) (:height vbox) (- scrollbar-height) (- (* inv-zoom 40))))
 
         create-comment?   (= :comments drawing-tool)
         drawing-path?     (or (and edition (= :draw (get-in edit-path [edition :edit-mode])))
@@ -126,6 +146,10 @@
         on-frame-leave    (actions/on-frame-leave frame-hover)
         on-frame-select   (actions/on-frame-select selected)
 
+        on-scroll-down    (actions/on-scroll-down @hover selected edition drawing-tool text-editing? node-editing?
+                                                  drawing-path? create-comment? space? viewport-ref zoom)
+        on-scroll-up      (actions/on-scroll-up)
+
         disable-events?          (contains? layout :comments)
         show-comments?           (= drawing-tool :comments)
         show-cursor-tooltip?     tooltip
@@ -145,7 +169,8 @@
                                       (or drawing-obj transform))
         show-selrect?            (and selrect (empty? drawing))
         show-measures?           (and (not transform) (not node-editing?) show-distances?)
-        show-artboard-names?              (contains? layout :display-artboard-names)]
+        show-artboard-names?              (contains? layout :display-artboard-names)
+        show-vertical-scroll?    (> vertical-offset 0)]
 
     (hooks/setup-dom-events viewport-ref zoom disable-paste in-viewport?)
     (hooks/setup-viewport-size viewport-ref)
@@ -237,6 +262,17 @@
                     #{(or @frame-hover (:id @hover))})
            :edition edition
            :zoom zoom}])
+
+       (when show-vertical-scroll?
+         [:g.vertical-scroll
+          [:rect {;;  :on-click on-scroll-down
+                  :on-mouse-down on-scroll-down
+                  :on-mouse-up       on-scroll-up
+                  :width (* inv-zoom 10)
+                  :rx (* inv-zoom 4)
+                  :ry (* inv-zoom 4)
+                  :height scrollbar-height
+                  :transform (str "translate(" scrollbar-x ", " scrollbar-y ")")}]])
 
        (when show-selection-handlers?
          [:& selection/selection-handlers

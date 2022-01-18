@@ -552,6 +552,30 @@
       (-> state
           (update :workspace-local dissoc :zooming)))))
 
+(defn start-vertical-scrolling []
+  (ptk/reify ::start-vertical-scrolling
+    ptk/WatchEvent
+    (watch [_ state stream]
+      (let [stopper (->> stream (rx/filter (ptk/type? ::finish-vertical-scrolling)))
+            zoom (-> (get-in state [:workspace-local :zoom]) gpt/point)]
+        (when-not (get-in state [:workspace-local :scrolling])
+          (rx/concat
+           (rx/of #(-> % (assoc-in [:workspace-local :scrolling] true)))
+           (->> stream
+                (rx/filter ms/pointer-event?)
+                (rx/filter #(= :delta (:source %)))
+                (rx/map :pt)
+                (rx/take-until stopper)
+                (rx/map (fn [delta]
+                          (let [delta (gpt/divide delta zoom)]
+                            (update-viewport-position {:y #(+ % (:y delta))})))))))))))
+
+(defn finish-vertical-scrolling []
+  (ptk/reify ::finish-vertical-scrolling
+    ptk/UpdateEvent
+    (update [_ state]
+      (-> state
+          (update :workspace-local dissoc :scrolling)))))
 
 ;; --- Toggle layout flag
 
