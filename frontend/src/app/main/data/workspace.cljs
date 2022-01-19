@@ -552,15 +552,20 @@
       (-> state
           (update :workspace-local dissoc :zooming)))))
 
-(defn start-vertical-scrolling []
+(defn start-vertical-scrolling [cursor-y scrollbar-y scrollbar-height]
   (ptk/reify ::start-vertical-scrolling
     ptk/WatchEvent
     (watch [_ state stream]
       (let [stopper (->> stream (rx/filter (ptk/type? ::finish-vertical-scrolling)))
-            zoom (-> (get-in state [:workspace-local :zoom]) gpt/point)]
+            zoom (-> (get-in state [:workspace-local :zoom]) gpt/point)
+            _ (println "AAAAAA" cursor-y scrollbar-y scrollbar-height)]
         (when-not (get-in state [:workspace-local :scrolling])
           (rx/concat
-           (rx/of #(-> % (assoc-in [:workspace-local :scrolling] true)))
+           (rx/of #(-> %
+                       (assoc-in [:workspace-local :scrolling] true)
+                       (assoc-in [:workspace-local :cursor-y] cursor-y)
+                       (assoc-in [:workspace-local :scrollbar-y] scrollbar-y)
+                       (assoc-in [:workspace-local :scrollbar-height] scrollbar-height)))
            (->> stream
                 (rx/filter ms/pointer-event?)
                 (rx/filter #(= :delta (:source %)))

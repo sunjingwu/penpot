@@ -501,11 +501,9 @@
       (timers/schedule #(st/emit! (dw/update-viewport-size size)))))))
 
 (defn on-scroll-down
-  [{:keys [id blocked hidden type]} selected edition drawing-tool text-editing?
-   node-editing? drawing-path? create-comment? space? viewport-ref zoom]
+  [cursor-y scrollbar-y scrollbar-height]
   (mf/use-callback
-   (mf/deps id blocked hidden type selected edition drawing-tool text-editing?
-            node-editing? drawing-path? create-comment? space? viewport-ref zoom)
+   (mf/deps cursor-y scrollbar-y scrollbar-height)
    (fn [bevent]
      (dom/stop-propagation bevent)
 
@@ -515,7 +513,7 @@
            alt?   (kbd/alt? event)]
 
        (st/emit! (ms/->MouseEvent :down ctrl? shift? alt?))
-       (st/emit! (dw/start-vertical-scrolling))))))
+       (st/emit! (dw/start-vertical-scrolling cursor-y scrollbar-y scrollbar-height))))))
 
 (defn on-scroll-up
   []
