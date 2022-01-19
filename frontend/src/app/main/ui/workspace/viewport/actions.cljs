@@ -523,11 +523,7 @@
    (fn [event]
      (dom/stop-propagation event)
 
-     (let [event (.-nativeEvent event)
-           ctrl? (kbd/ctrl? event)
-           shift? (kbd/shift? event)
-           alt? (kbd/alt? event)]
-
+     (let [event (.-nativeEvent event)]
        (dom/prevent-default event)
 
        (st/emit! (dw/finish-vertical-scrolling)
