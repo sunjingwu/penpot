@@ -114,6 +114,13 @@
         bottom-offset (max 0 (- (:y2 base-objects-rect) (+ (:y vbox) (:height vbox))))
         vertical-offset (+ top-offset bottom-offset)
 
+        _ (println "top-offset" top-offset "bottom-offset" bottom-offset "height" (:height vbox))
+
+        top-offset (/ (* (:height vbox) top-offset) vertical-offset)
+        bottom-offset (/ (* (:height vbox) bottom-offset) vertical-offset)
+
+        _ (println "top-offset" top-offset "bottom-offset" bottom-offset "height" (:height vbox))
+
         scrolling         (get-in @st/state [:workspace-local :scrolling])
         state-cursor-y         (get-in @st/state [:workspace-local :cursor-y])
         state-scrollbar-y         (get-in @st/state [:workspace-local :scrollbar-y])
@@ -133,10 +140,10 @@
         ;; _ (println "state-scrollbar-height" state-scrollbar-height)
         ;; _ (println "scrollbar-height" scrollbar-height)
 
-        _ (println "state-cursor-y" state-cursor-y)
-        _ (println "state-scrollbar-y" state-scrollbar-y)
-        _ (println "state-scrollbar-height" state-scrollbar-height)
-        _ (println "coords" (:y coords))
+        ;; _ (println "state-cursor-y" state-cursor-y)
+        ;; _ (println "state-scrollbar-y" state-scrollbar-y)
+        ;; _ (println "state-scrollbar-height" state-scrollbar-height)
+        ;; _ (println "coords" (:y coords))
 
         scrollbar-y       (+ (:y vbox) top-offset)
         scrollbar-y       (max scrollbar-y (+ (:y vbox) (* inv-zoom 40)))
