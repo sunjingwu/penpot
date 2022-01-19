@@ -573,7 +573,7 @@
                 (rx/take-until stopper)
                 (rx/map (fn [delta]
                           (let [delta (gpt/divide delta zoom)]
-                            (update-viewport-position {:y #(+ % (:y delta))})))))))))))
+                            (update-viewport-position {:y #(+ % (* 2 (:y delta)))})))))))))))
 
 (defn finish-vertical-scrolling []
   (ptk/reify ::finish-vertical-scrolling

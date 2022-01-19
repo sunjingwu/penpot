@@ -121,7 +121,7 @@
 
         scrollbar-x       (+ (:x vbox) (:width vbox) (* inv-zoom -40) #_(* zoom -20))
         scrollbar-height  (- (:height vbox) vertical-offset)
-        scrollbar-height  (max scrollbar-height (* inv-zoom 10))
+        scrollbar-height  (max scrollbar-height (* inv-zoom 20))
         scrollbar-height  (if scrolling
                             state-scrollbar-height
                             scrollbar-height)
