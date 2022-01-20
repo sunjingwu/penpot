@@ -560,12 +560,18 @@
             zoom (-> (get-in state [:workspace-local :zoom]) gpt/point)
             _ (println "AAAAAA" cursor-y scrollbar-y scrollbar-height)]
         (when-not (get-in state [:workspace-local :scrolling])
-          (rx/concat
+          (rx/merge
            (rx/of #(-> %
                        (assoc-in [:workspace-local :scrolling] true)
                        (assoc-in [:workspace-local :cursor-y] cursor-y)
                        (assoc-in [:workspace-local :scrollbar-y] scrollbar-y)
                        (assoc-in [:workspace-local :scrollbar-height] scrollbar-height)))
+
+          (->> (rx/interval 100)
+               (rx/tap #(println "TODO"))
+               (rx/take-until stopper)
+               (rx/ignore))
+
            (->> stream
                 (rx/filter ms/pointer-event?)
                 (rx/filter #(= :delta (:source %)))
@@ -573,7 +579,7 @@
                 (rx/take-until stopper)
                 (rx/map (fn [delta]
                           (let [delta (gpt/divide delta zoom)]
-                            (update-viewport-position {:y #(+ % (* 2 (:y delta)))})))))))))))
+                            (update-viewport-position {:y #(+ % (:y delta))})))))))))))
 
 (defn finish-vertical-scrolling []
   (ptk/reify ::finish-vertical-scrolling

@@ -318,7 +318,9 @@
              ;; events
              delta (if @last-position
                      (gpt/subtract raw-pt @last-position)
-                     (gpt/point 0 0))]
+                     (gpt/point 0 0))
+             
+             _ (println "DEEEEELTA" delta)]
 
          (reset! last-position raw-pt)
          (st/emit! (ms/->PointerEvent :delta delta
@@ -510,8 +512,9 @@
      (let [event  (.-nativeEvent bevent)
            ctrl?  (kbd/ctrl? event)
            shift? (kbd/shift? event)
-           alt?   (kbd/alt? event)]
-
+           alt?   (kbd/alt? event)
+           position (dom/get-client-position event)
+           _ (println "position" position)]
        (st/emit! (ms/->MouseEvent :down ctrl? shift? alt?))
        (st/emit! (dw/start-vertical-scrolling cursor-y scrollbar-y scrollbar-height))))))
 

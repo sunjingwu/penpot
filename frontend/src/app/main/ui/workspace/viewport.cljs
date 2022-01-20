@@ -11,7 +11,6 @@
    [app.common.geom.shapes :as gsh]
    [app.common.uuid :as uuid]
    [app.main.refs :as refs]
-   [app.main.store :as st]
    [app.main.streams :as ms]
    [app.main.ui.context :as ctx]
    [app.main.ui.hooks :as hks]
@@ -31,6 +30,7 @@
    [app.main.ui.workspace.viewport.pixel-overlay :as pixel-overlay]
    [app.main.ui.workspace.viewport.presence :as presence]
    [app.main.ui.workspace.viewport.selection :as selection]
+   [app.main.ui.workspace.viewport.scroll-bars :as scroll-bars]
    [app.main.ui.workspace.viewport.snap-distances :as snap-distances]
    [app.main.ui.workspace.viewport.snap-points :as snap-points]
    [app.main.ui.workspace.viewport.thumbnail-renderer :as wtr]
@@ -95,7 +95,6 @@
         move-stream       (mf/use-memo #(rx/subject))
 
         zoom              (d/check-num zoom 1)
-        inv-zoom          (/ 1 zoom)
         drawing-tool      (:tool drawing)
         drawing-obj       (:object drawing)
 
@@ -104,53 +103,6 @@
 
         ;; Only when we have all the selected shapes in one frame
         selected-frame    (when (= (count selected-frames) 1) (get base-objects (first selected-frames)))
-
-
-        root-shapes   (get-in base-objects [uuid/zero :shapes])
-        shapes        (->> root-shapes (mapv #(get base-objects %)))
-        base-objects-rect (gsh/selection-rect shapes)
-
-        top-offset (max 0 (- (:y vbox) (:y base-objects-rect)))
-        bottom-offset (max 0 (- (:y2 base-objects-rect) (+ (:y vbox) (:height vbox))))
-        vertical-offset (+ top-offset bottom-offset)
-
-        _ (println "top-offset" top-offset "bottom-offset" bottom-offset "height" (:height vbox))
-
-        top-offset (/ (* (:height vbox) top-offset) vertical-offset)
-        bottom-offset (/ (* (:height vbox) bottom-offset) vertical-offset)
-
-        _ (println "top-offset" top-offset "bottom-offset" bottom-offset "height" (:height vbox))
-
-        scrolling         (get-in @st/state [:workspace-local :scrolling])
-        state-cursor-y         (get-in @st/state [:workspace-local :cursor-y])
-        state-scrollbar-y         (get-in @st/state [:workspace-local :scrollbar-y])
-        state-scrollbar-height         (get-in @st/state [:workspace-local :scrollbar-height])
-
-        scrollbar-x       (+ (:x vbox) (:width vbox) (* inv-zoom -40) #_(* zoom -20))
-        scrollbar-height  (- (:height vbox) vertical-offset)
-        scrollbar-height  (max scrollbar-height (* inv-zoom 20))
-        scrollbar-height  (if scrolling
-                            state-scrollbar-height
-                            scrollbar-height)
-
-        coords (hks/use-rxsub ms/mouse-position)
-
-        ;; _ (println "scrolling" scrolling)
-        ;; _ (println "state-scrollbar-x" state-scrollbar-x)
-        ;; _ (println "state-scrollbar-height" state-scrollbar-height)
-        ;; _ (println "scrollbar-height" scrollbar-height)
-
-        ;; _ (println "state-cursor-y" state-cursor-y)
-        ;; _ (println "state-scrollbar-y" state-scrollbar-y)
-        ;; _ (println "state-scrollbar-height" state-scrollbar-height)
-        ;; _ (println "coords" (:y coords))
-
-        scrollbar-y       (+ (:y vbox) top-offset)
-        scrollbar-y       (max scrollbar-y (+ (:y vbox) (* inv-zoom 40)))
-        scrollbar-y       (min scrollbar-y (+ (:y vbox) (:height vbox) (- scrollbar-height) (- (* inv-zoom 40))))
-        scrollbar-y       (if scrolling
-                            (- (:y coords) (- state-cursor-y state-scrollbar-y))
-                            scrollbar-y)
 
         create-comment?   (= :comments drawing-tool)
         drawing-path?     (or (and edition (= :draw (get-in edit-path [edition :edit-mode])))
@@ -179,9 +131,6 @@
         on-frame-leave    (actions/on-frame-leave frame-hover)
         on-frame-select   (actions/on-frame-select selected)
 
-        on-scroll-down    (actions/on-scroll-down (:y coords) scrollbar-y scrollbar-height)
-        on-scroll-up      (actions/on-scroll-up)
-
         disable-events?          (contains? layout :comments)
         show-comments?           (= drawing-tool :comments)
         show-cursor-tooltip?     tooltip
@@ -201,8 +150,7 @@
                                       (or drawing-obj transform))
         show-selrect?            (and selrect (empty? drawing))
         show-measures?           (and (not transform) (not node-editing?) show-distances?)
-        show-artboard-names?              (contains? layout :display-artboard-names)
-        show-vertical-scroll?    (> vertical-offset 0)]
+        show-artboard-names?              (contains? layout :display-artboard-names)]
 
     (hooks/setup-dom-events viewport-ref zoom disable-paste in-viewport?)
     (hooks/setup-viewport-size viewport-ref)
@@ -293,18 +241,11 @@
            :hover (when (not= :frame (:type @hover))
                     #{(or @frame-hover (:id @hover))})
            :edition edition
-           :zoom zoom}])
+           :zoom zoom}]
 
-       (when show-vertical-scroll?
-         [:g.vertical-scroll
-          [:rect {;;  :on-click on-scroll-down
-                  :on-mouse-down on-scroll-down
-                  :on-mouse-up       on-scroll-up
-                  :width (* inv-zoom 10)
-                  :rx (* inv-zoom 4)
-                  :ry (* inv-zoom 4)
-                  :height scrollbar-height
-                  :transform (str "translate(" scrollbar-x ", " scrollbar-y ")")}]])
+       [:& scroll-bars/viewport-vertical-scrollbar
+        {:zoom zoom
+         :vbox vbox}])
 
        (when show-selection-handlers?
          [:& selection/selection-handlers
