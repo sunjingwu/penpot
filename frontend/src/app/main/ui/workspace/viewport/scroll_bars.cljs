@@ -25,8 +25,7 @@
 
 (defn translate-point-to-viewport [viewport zoom pt]
   (when-let [_ (and viewport zoom pt)]
-    (let [_ (println "translate-point-to-viewport" viewport zoom pt)
-          vbox     (.. ^js viewport -viewBox -baseVal)
+    (let [vbox     (.. ^js viewport -viewBox -baseVal)
           brect    (dom/get-bounding-rect viewport)
           brect    (gpt/point (:left brect)
                               (:top brect))
@@ -51,21 +50,18 @@
                              (update :y-delta #(-> y-delta))
                              (update :scroll-speed #(-> 1))))))))
 
-            ;; (assoc-in state [:workspace-local :scroll] {:scroll-top? scroll-top?
-            ;;                                             :scroll-bottom? scroll-bottom?
-            ;;                                             :y-delta y-delta}))))
-
 (defn keep-scrolling [zoom]
   (ptk/reify ::keep-scrolling
     ptk/UpdateEvent
     (update [_ state]
             (update-in state [:workspace-local :vbox]
                        (fn [vbox]
-                         (let [y-delta (-> (/ 1 zoom)
+                         (let [y-delta (-> (/ 100 zoom)
                                            (* (:scroll-speed vbox)))
                                scroll-speed (-> (:scroll-speed vbox)
                                                 (* 2)
                                                 (min 10))
+                               _ (println "keep -scrolling" zoom scroll-speed y-delta)
                                update-y (cond
                                           (:scroll-top? vbox) #(- % y-delta)
                                           (:scroll-bottom? vbox) #(+ % y-delta)
@@ -81,9 +77,10 @@
       (let [stopper (->> stream (rx/filter (ptk/type? ::finish-vertical-scrolling)))]
         (when-not (get-in state [:workspace-local :scrolling])
            (->> (rx/interval 300)
+                (rx/map #(keep-scrolling zoom))
+                ;; (rx/tap #(println "ASDASD" zoom))
                 (rx/take-until stopper)
-                ;; (rx/map #(keep-scrolling zoom))
-                (rx/ignore)))))))
+                #_(rx/ignore)))))))
 
 
 (defn finish-vertical-scrolling []
@@ -97,7 +94,13 @@
   {::mf/wrap [mf/memo]}
   [{:keys [viewport-ref zoom vbox]}]
 
-  (let [base-objects           (mf/deref refs/workspace-page-objects)
+  (let [scrolling?-ref         (mf/use-ref false)
+        scrollbar-height-ref   (mf/use-ref nil)
+        start-ref              (mf/use-ref nil)
+        current-ref            (mf/use-ref nil)
+        cursor-to-scroll-ref   (mf/use-ref nil)
+
+        base-objects           (mf/deref refs/workspace-page-objects)
         root-shapes            (get-in base-objects [uuid/zero :shapes])
         shapes                 (->> root-shapes (mapv #(get base-objects %)))
         base-objects-rect      (gsh/selection-rect shapes)
@@ -105,7 +108,7 @@
         top-offset             (max 0 (- (:y vbox) (:y base-objects-rect)))
         bottom-offset          (max 0 (- (:y2 base-objects-rect) (+ (:y vbox) (:height vbox))))
         vertical-offset        (+ top-offset bottom-offset)
-        show-vertical-scroll?  (or scrolling? (> vertical-offset 0))
+        show-vertical-scroll?  (or (mf/ref-val scrolling?-ref) (> vertical-offset 0))
 
         top-offset             (if (> vertical-offset (:height vbox))
                                  (/ (* (:height vbox) top-offset) vertical-offset)
@@ -114,18 +117,16 @@
                                  (/ (* (:height vbox) bottom-offset) vertical-offset)
                                  bottom-offset)
 
+        _ (println "top-offset" top-offset "bottom-offset" bottom-offset)
+
         inv-zoom               (/ 1 zoom)
         coords                 (hks/use-rxsub ms/mouse-position)
-
-        scrolling?-ref         (mf/use-ref false)
-        scrollbar-height-ref   (mf/use-ref nil)
-        start-ref              (mf/use-ref nil)
-        current-ref            (mf/use-ref nil)
-        cursor-to-scroll-ref   (mf/use-ref nil)
 
         state-cursor-y         (get-in @st/state [:workspace-local :cursor-y])
         state-scrollbar-y      (get-in @st/state [:workspace-local :scrollbar-y])
         state-scrollbar-height (get-in @st/state [:workspace-local :scrollbar-height])
+
+        _ (println "vertical-offset" vertical-offset)
 
         scrollbar-x            (+ (:x vbox) (:width vbox) (* inv-zoom -40) #_(* zoom -20))
         scrollbar-height       (- (:height vbox) vertical-offset)
@@ -134,8 +135,6 @@
                                  (mf/ref-val scrollbar-height-ref)
                                  scrollbar-height)
 
-        scroll-top?            (< (:y vbox) (:y base-objects-rect))
-        scroll-bottom?         (< (:y2 base-objects-rect) (+ (:y vbox) (:height vbox)))
 
         viewport               (mf/ref-val viewport-ref)
 
@@ -143,11 +142,20 @@
                                    (max (+ (:y vbox) (* inv-zoom 40)))
                                    (min (+ (:y vbox) (:height vbox) (- scrollbar-height) (- (* inv-zoom 40)))))
 
+        ;; (if (and (mf/ref-val scrolling?-ref) (not (scroll-top?)))
         scrollbar-y            (if (mf/ref-val scrolling?-ref)
                                  (-> (translate-point-to-viewport viewport zoom (mf/ref-val start-ref))
                                      (:y)
-                                     (- (mf/ref-val cursor-to-scroll-ref))) ;; (- (:y coords) (- state-cursor-y state-scrollbar-y))
+                                     (- (mf/ref-val cursor-to-scroll-ref)))
                                  scrollbar-y)
+
+        scroll-top?            false ;;(< scrollbar-y (:y vbox))
+        scroll-bottom?         false ;;(> (+ scrollbar-y scrollbar-height) (+ (:y vbox) (:height vbox)))
+
+        ;; scrollbar-y (if scroll-bottom?
+        ;;               (+ (:y vbox) (:height vbox) (- scrollbar-height))
+        ;;               scrollbar-y)
+
 
         on-scroll-down         (actions/on-scroll-down (:y coords) scrollbar-y scrollbar-height)
         on-scroll-up           (actions/on-scroll-up)
@@ -171,7 +179,8 @@
            (mf/set-ref-val! scrolling?-ref true)
            (mf/set-ref-val! scrollbar-height-ref scrollbar-height)
            (mf/set-ref-val! start-ref (dom/get-client-position event))
-           (mf/set-ref-val! cursor-to-scroll-ref (- (:y coords) scrollbar-y))
+           (mf/set-ref-val! cursor-to-scroll-ref (-> (- (:y coords) scrollbar-y)
+                                                     (max 0)))
            (st/emit! (start-vertical-scrolling zoom))))
 
         on-mouse-up
