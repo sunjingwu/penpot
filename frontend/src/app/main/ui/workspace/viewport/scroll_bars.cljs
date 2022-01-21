@@ -105,8 +105,10 @@
         shapes                 (->> root-shapes (mapv #(get base-objects %)))
         base-objects-rect      (gsh/selection-rect shapes)
 
+        inv-zoom               (/ 1 zoom)
+
         top-offset             (max 0 (- (:y vbox) (:y base-objects-rect)))
-        bottom-offset          (max 0 (- (:y2 base-objects-rect) (+ (:y vbox) (:height vbox))))
+        bottom-offset          (max 0 (- (:y2 base-objects-rect) (+ (:y vbox) (:height vbox)) (* inv-zoom -40)))
         vertical-offset        (+ top-offset bottom-offset)
         show-vertical-scroll?  (or (mf/ref-val scrolling?-ref) (> vertical-offset 0))
 
@@ -119,7 +121,6 @@
 
         _ (println "top-offset" top-offset "bottom-offset" bottom-offset)
 
-        inv-zoom               (/ 1 zoom)
         coords                 (hks/use-rxsub ms/mouse-position)
 
         state-cursor-y         (get-in @st/state [:workspace-local :cursor-y])
