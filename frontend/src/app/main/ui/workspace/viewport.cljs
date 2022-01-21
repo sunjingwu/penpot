@@ -245,7 +245,8 @@
 
        [:& scroll-bars/viewport-vertical-scrollbar
         {:zoom zoom
-         :vbox vbox}])
+         :vbox vbox
+         :viewport-ref viewport-ref}])
 
        (when show-selection-handlers?
          [:& selection/selection-handlers
