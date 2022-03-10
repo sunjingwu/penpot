@@ -355,6 +355,8 @@
 
   & li.checked-element {
     padding-left: 0;
+    display: flex;
+    justify-content: space-around;
 
     & span {
       margin: 0;
@@ -458,6 +460,12 @@
     &:hover {
       border: 1px solid $color-gray-40;
     }
+  }
+}
+
+.element-set-content .border-data {
+  &[draggable="true"] {
+    cursor: pointer;
   }
 }
 
@@ -954,11 +962,17 @@
   justify-content: center;
   align-items: center;
   cursor: pointer;
+
   svg {
     width: 12px;
     height: 12px;
     fill: $color-gray-20;
     stroke: $color-gray-20;
+  }
+
+  &.remove {
+    min-width: 20px;
+    min-height: 20px;
   }
 
   &:hover svg,
@@ -1168,9 +1182,8 @@
   }
 
   header {
-    padding: 15px 17px;
     display: flex;
-    align-items: center;
+    flex-direction: column;
     position: relative;
 
     .backend-filters {
@@ -1225,7 +1238,13 @@
       border-radius: $br-small;
       color: $color-gray-20;
       border: 1px solid $color-gray-30;
-      margin: 0px;
+      width: 88%;
+      margin: 15px 17px;
+    }
+
+    .title {
+      font-size: $fs14;
+      margin: 9px 17px;
     }
 
     .options {

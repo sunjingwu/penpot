@@ -9,33 +9,42 @@
 "use strict";
 
 describe("account creation", () => {
-  let validUser
+  let validUser;
 
   beforeEach(() => {
-    cy.fixture('validuser.json').then((user) => {
+    cy.fixture("validuser.json").then((user) => {
       validUser = user;
     });
     cy.visit("http://localhost:3449/#/auth/login");
-    cy.get("a").contains("Create an account").click()
+    cy.getBySel("register-submit").click();
   });
 
   it("displays the account creation form", () => {
-    cy.get("input[type=submit]").contains("Create an account").should("exist");
+    cy.getBySel("register-form-submit").should("exist");
+  });
+
+  it("create an account", () => {
+    let email = "mail" +  Date.now() +"@mail.com";
+    cy.get("#email").type(email);
+    cy.get("#password").type("anewpassword");    
+    cy.get("input[type=submit]").click();
+    cy.getBySel("register-title").should("exist");
+    cy.get("#fullname").type("Test user")
+    cy.get("input[type=submit]").click();
+    cy.get(".dashboard-layout").should("exist");
   });
 
   it("create an account of an existent email fails", () => {
     cy.get("#email").type(validUser.email);
     cy.get("#password").type("anewpassword");
-    cy.get("input[type=submit]").contains("Create an account").click();
-    cy.get(".error").should("contain", "Email already used")
+    cy.getBySel("register-form-submit").click();
+    cy.getBySel("email-input-error").should("exist");
   });
 
-
   it("can go back", () => {
-    cy.get("a").contains("Login here").click()
-    cy.contains("Great to see you again!").should("exist");
+    cy.getBySel("login-here-link").click();
+    cy.getBySel("login-title").should("exist");
     cy.get("#email").should("exist");
     cy.get("#password").should("exist");
   });
 });
-

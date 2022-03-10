@@ -20,10 +20,12 @@
   {::mf/register modal/components
    ::mf/register-as :confirm}
   [{:keys [message
+           scd-message
            title
            on-accept
            on-cancel
            hint
+           items
            cancel-label
            accept-label
            accept-style] :as props}]
@@ -70,9 +72,20 @@
         {:on-click cancel-fn} i/close]]
 
       [:div.modal-content
-       [:h3 message]
+       (when (and (string? message) (not= message ""))
+         [:h3 message])
+       (when (and (string? scd-message) (not= scd-message ""))
+         [:h3 scd-message])
        (when (string? hint)
-         [:p hint])]
+         [:p hint])
+       (when (> (count items) 0)
+         [:*
+          [:p (tr "ds.component-subtitle")]
+          [:ul
+           (for [item items]
+             [:li.modal-item-element
+              [:span.modal-component-icon i/component]
+              [:span (:name item)]])]])]
 
       [:div.modal-footer
        [:div.action-buttons

@@ -8,15 +8,18 @@
   "A workspace specific context menu (mouse right click)."
   (:require
    [app.common.data :as d]
-   [app.common.types.page-options :as cto]
+   [app.common.spec.page :as csp]
+   [app.main.data.events :as ev]
    [app.main.data.modal :as modal]
    [app.main.data.workspace :as dw]
    [app.main.data.workspace.interactions :as dwi]
    [app.main.data.workspace.libraries :as dwl]
+   [app.main.data.workspace.selection :as dws]
    [app.main.data.workspace.shortcuts :as sc]
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.components.dropdown :refer [dropdown]]
+   [app.main.ui.components.shape-icon :as si]
    [app.main.ui.context :as ctx]
    [app.main.ui.icons :as i]
    [app.util.dom :as dom]
@@ -34,7 +37,7 @@
   (dom/stop-propagation event))
 
 (mf/defc menu-entry
-  [{:keys [title shortcut on-click children] :as props}]
+  [{:keys [title shortcut on-click children selected? icon] :as props}]
   (let [submenu-ref (mf/use-ref nil)
         hovering? (mf/use-ref false)
 
@@ -64,22 +67,32 @@
              (when (and (some? dom) (some? submenu-node))
                (dom/set-css-property! submenu-node "top" (str (.-offsetTop dom) "px"))))))]
 
-    [:li {:ref set-dom-node
-          :on-click on-click
-          :on-pointer-enter on-pointer-enter
-          :on-pointer-leave on-pointer-leave}
-     [:span.title title]
-     [:span.shortcut (or shortcut "")]
+    (if icon
+      [:li.icon-menu-item {:ref set-dom-node
+                           :on-click on-click
+                           :on-pointer-enter on-pointer-enter
+                           :on-pointer-leave on-pointer-leave}
+       [:span.icon-wrapper
+        (if selected? [:span.selected-icon i/tick]
+            [:span.selected-icon])
+        [:span.shape-icon icon]]
+       [:span.title title]]
+      [:li {:ref set-dom-node
+            :on-click on-click
+            :on-pointer-enter on-pointer-enter
+            :on-pointer-leave on-pointer-leave}
+       [:span.title title]
+       [:span.shortcut (or shortcut "")]
 
-     (when (> (count children) 1)
-       [:span.submenu-icon i/arrow-slide])
+       (when (> (count children) 1)
+         [:span.submenu-icon i/arrow-slide])
 
-     (when (> (count children) 1)
-       [:ul.workspace-context-menu
-        {:ref submenu-ref
-         :style {:display "none" :left 250}
-         :on-context-menu prevent-default}
-        children])]))
+       (when (> (count children) 1)
+         [:ul.workspace-context-menu
+          {:ref submenu-ref
+           :style {:display "none" :left 250}
+           :on-context-menu prevent-default}
+          children])])))
 
 (mf/defc menu-separator
   []
@@ -88,7 +101,8 @@
 (mf/defc context-menu-edit
   []
   (let [do-copy      (st/emitf (dw/copy-selected))
-        do-cut       (st/emitf (dw/copy-selected) dw/delete-selected)
+        do-cut       (st/emitf (dw/copy-selected)
+                               (dw/delete-selected))
         do-paste     (st/emitf dw/paste)
         do-duplicate (st/emitf (dw/duplicate-selected false))]
     [:*
@@ -108,12 +122,20 @@
      [:& menu-separator]]))
 
 (mf/defc context-menu-layer-position
-  []
+  [{:keys [hover-objs shapes]}]
   (let [do-bring-forward  (st/emitf (dw/vertical-order-selected :up))
         do-bring-to-front (st/emitf (dw/vertical-order-selected :top))
         do-send-backward  (st/emitf (dw/vertical-order-selected :down))
-        do-send-to-back   (st/emitf (dw/vertical-order-selected :bottom))]
+        do-send-to-back   (st/emitf (dw/vertical-order-selected :bottom))
+        select-shapes     (fn [id] (st/emitf (dws/select-shape id)))]
     [:*
+     (when (> (count hover-objs) 1)
+       [:& menu-entry {:title (tr "workspace.shape.menu.select-layer")}
+        (for [object hover-objs]
+          [:& menu-entry {:title (:name object)
+                          :selected? (some #(= object %) shapes)
+                          :on-click (select-shapes (:id object))
+                          :icon (si/element-icon {:shape object})}])])
      [:& menu-entry {:title (tr "workspace.shape.menu.forward")
                      :shortcut (sc/get-tooltip :bring-forward)
                      :on-click do-bring-forward}]
@@ -186,10 +208,21 @@
 
      (when (not has-frame?)
        [:*
-         [:& menu-entry {:title (tr "workspace.shape.menu.create-artboard-from-selection")
-                         :shortcut (sc/get-tooltip :create-artboard-from-selection)
-                         :on-click do-create-artboard-from-selection}]
-         [:& menu-separator]])]))
+        [:& menu-entry {:title (tr "workspace.shape.menu.create-artboard-from-selection")
+                        :shortcut (sc/get-tooltip :create-artboard-from-selection)
+                        :on-click do-create-artboard-from-selection}]
+        [:& menu-separator]])]))
+
+(mf/defc context-focus-mode-menu
+  [{:keys []}]
+  (let [focus (mf/deref refs/workspace-focus-selected)
+        do-toggle-focus-mode #(st/emit! (dw/toggle-focus-mode))]
+
+    [:& menu-entry {:title (if (empty? focus)
+                             (tr "workspace.focus.focus-on")
+                             (tr "workspace.focus.focus-off"))
+                    :shortcut (sc/get-tooltip :toggle-focus-mode)
+                    :on-click do-toggle-focus-mode}]))
 
 (mf/defc context-menu-path
   [{:keys [shapes disable-flatten? disable-booleans?]}]
@@ -284,7 +317,7 @@
         is-frame?       (and single? has-frame?)]
 
     (when (and prototype? is-frame?)
-      (let [flow (cto/get-frame-flow flows (-> shapes first :id))]
+      (let [flow (csp/get-frame-flow flows (-> shapes first :id))]
         (if (some? flow)
           [:& menu-entry {:title (tr "workspace.shape.menu.delete-flow-start")
                           :on-click (do-remove-flow flow)}]
@@ -303,6 +336,7 @@
         shape-id (->> shapes first :id)
         component-id (->> shapes first :component-id)
         component-file (-> shapes first :component-file)
+        component-shapes (filter #(contains? % :component-id) shapes)
 
         current-file-id (mf/use-ctx ctx/current-file-id)
         local-component? (= component-file current-file-id)
@@ -314,6 +348,7 @@
         do-show-component (st/emitf (dw/go-to-component component-id))
         do-navigate-component-file (st/emitf (dwl/nav-to-component-file component-file))
         do-update-component (st/emitf (dwl/update-component-sync shape-id component-file))
+        do-update-component-in-bulk (st/emitf (dwl/update-component-in-bulk component-shapes component-file))
 
         do-update-remote-component
         (st/emitf (modal/show
@@ -324,7 +359,18 @@
                     :cancel-label (tr "modals.update-remote-component.cancel")
                     :accept-label (tr "modals.update-remote-component.accept")
                     :accept-style :primary
-                    :on-accept do-update-component}))]
+                    :on-accept do-update-component}))
+
+        do-update-in-bulk (st/emitf (modal/show
+                                     {:type :confirm
+                                      :message ""
+                                      :title (tr "modals.update-remote-component-in-bulk.message")
+                                      :hint (tr "modals.update-remote-component-in-bulk.hint")
+                                      :items component-shapes
+                                      :cancel-label (tr "modals.update-remote-component.cancel")
+                                      :accept-label (tr "modals.update-remote-component.accept")
+                                      :accept-style :primary
+                                      :on-accept do-update-component-in-bulk}))]
     [:*
      (when (and (not has-frame?) (not is-component?))
        [:*
@@ -335,7 +381,10 @@
         (when has-component?
           [:& menu-entry {:title (tr "workspace.shape.menu.detach-instances-in-bulk")
                           :shortcut (sc/get-tooltip :detach-component)
-                          :on-click do-detach-component-in-bulk}])])
+                          :on-click do-detach-component-in-bulk}]
+          (when (not single?)
+            [:& menu-entry {:title (tr "workspace.shape.menu.update-components-in-bulk")
+                            :on-click do-update-in-bulk}]))])
 
      (when is-component?
        ;; WARNING: this menu is the same as the context menu at the sidebar.
@@ -367,7 +416,7 @@
 
 (mf/defc context-menu-delete
   []
-  (let [do-delete (st/emitf dw/delete-selected)]
+  (let [do-delete (st/emitf (dw/delete-selected))]
     [:& menu-entry {:title (tr "workspace.shape.menu.delete")
                     :shortcut (sc/get-tooltip :delete)
                     :on-click do-delete}]))
@@ -376,8 +425,11 @@
   [{:keys [mdata] :as props}]
   (let [{:keys [disable-booleans? disable-flatten?]} mdata
         shapes (mf/deref refs/selected-objects)
+        hover-ids (mf/deref refs/current-hover-ids)
+        hover-objs (mf/deref (refs/objects-by-id hover-ids))
 
         props #js {:shapes shapes
+                   :hover-objs hover-objs
                    :disable-booleans? disable-booleans?
                    :disable-flatten? disable-flatten?}]
     (when-not (empty? shapes)
@@ -386,6 +438,7 @@
        [:> context-menu-layer-position props]
        [:> context-menu-flip props]
        [:> context-menu-group props]
+       [:> context-focus-mode-menu props]
        [:> context-menu-path props]
        [:> context-menu-layer-options props]
        [:> context-menu-prototype props]
@@ -394,10 +447,23 @@
 
 (mf/defc viewport-context-menu
   []
-  (let [do-paste (st/emitf dw/paste)]
-    [:& menu-entry {:title (tr "workspace.shape.menu.paste")
-                    :shortcut (sc/get-tooltip :paste)
-                    :on-click do-paste}]))
+  (let [focus      (mf/deref refs/workspace-focus-selected)
+        do-paste   #(st/emit! dw/paste)
+        do-hide-ui #(st/emit! (-> (dw/toggle-layout-flag :hide-ui)
+                                  (vary-meta assoc ::ev/origin "workspace-context-menu")))
+        do-toggle-focus-mode #(st/emit! (dw/toggle-focus-mode))]
+    [:*
+     [:& menu-entry {:title (tr "workspace.shape.menu.paste")
+                     :shortcut (sc/get-tooltip :paste)
+                     :on-click do-paste}]
+     [:& menu-entry {:title (tr "workspace.shape.menu.hide-ui")
+                     :shortcut (sc/get-tooltip :hide-ui)
+                     :on-click do-hide-ui}]
+
+     (when (d/not-empty? focus)
+       [:& menu-entry {:title (tr "workspace.focus.focus-off")
+                       :shortcut (sc/get-tooltip :toggle-focus-mode)
+                       :on-click do-toggle-focus-mode}])]))
 
 (mf/defc context-menu
   []
@@ -407,17 +473,17 @@
         dropdown-ref (mf/use-ref)]
 
     (mf/use-effect
-      (mf/deps mdata)
-      #(let [dropdown (mf/ref-val dropdown-ref)]
-         (when dropdown
-           (let [bounding-rect (dom/get-bounding-rect dropdown)
-                 window-size (dom/get-window-size)
-                 delta-x (max (- (+ (:right bounding-rect) 250) (:width window-size)) 0)
-                 delta-y (max (- (:bottom bounding-rect) (:height window-size)) 0)
-                 new-style (str "top: " (- top delta-y) "px; "
-                                "left: " (- left delta-x) "px;")]
-             (when (or (> delta-x 0) (> delta-y 0))
-               (.setAttribute ^js dropdown "style" new-style))))))
+     (mf/deps mdata)
+     #(let [dropdown (mf/ref-val dropdown-ref)]
+        (when dropdown
+          (let [bounding-rect (dom/get-bounding-rect dropdown)
+                window-size (dom/get-window-size)
+                delta-x (max (- (+ (:right bounding-rect) 250) (:width window-size)) 0)
+                delta-y (max (- (:bottom bounding-rect) (:height window-size)) 0)
+                new-style (str "top: " (- top delta-y) "px; "
+                               "left: " (- left delta-x) "px;")]
+            (when (or (> delta-x 0) (> delta-y 0))
+              (.setAttribute ^js dropdown "style" new-style))))))
 
     [:& dropdown {:show (boolean mdata)
                   :on-close (st/emitf dw/hide-context-menu)}

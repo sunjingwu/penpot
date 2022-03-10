@@ -7,17 +7,17 @@
 (ns app.main.ui.dashboard.sidebar
   (:require
    [app.common.data :as d]
+   [app.common.data.macros :as dm]
    [app.common.spec :as us]
    [app.config :as cf]
    [app.main.data.dashboard :as dd]
    [app.main.data.events :as ev]
-   [app.main.data.messages :as dm]
+   [app.main.data.messages :as msg]
    [app.main.data.modal :as modal]
    [app.main.data.users :as du]
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.components.dropdown :refer [dropdown]]
-   [app.main.ui.components.forms :as fm]
    [app.main.ui.dashboard.comments :refer [comments-section]]
    [app.main.ui.dashboard.inline-edition :refer [inline-edition]]
    [app.main.ui.dashboard.project-menu :refer [project-menu]]
@@ -100,7 +100,7 @@
         on-drop-success
         (mf/use-callback
          (mf/deps (:id item))
-         (st/emitf (dm/success (tr "dashboard.success-move-file"))
+         (st/emitf (msg/success (tr "dashboard.success-move-file"))
                    (dd/go-to-files (:id item))))
 
         on-drop
@@ -173,7 +173,7 @@
 
     [:form.sidebar-search
      [:input.input-text
-      {:key :images-search-box
+      {:key "images-search-box"
        :id "search-input"
        :type "text"
        :placeholder (tr "dashboard.search-placeholder")
@@ -214,79 +214,29 @@
       [:span.team-text (tr "dashboard.your-penpot")]]
 
      (for [team (remove :is-default (vals teams))]
-       [:* {:key (:id team)}
-        [:li.team-name {:on-click (partial team-selected (:id team))}
-         [:span.team-icon
-          [:img {:src (cf/resolve-team-photo-url team)}]]
-         [:span.team-text {:title (:name team)} (:name team)]]])
+       [:li.team-name {:on-click (partial team-selected (:id team))
+                       :key (dm/str (:id team))}
+        [:span.team-icon
+         [:img {:src (cf/resolve-team-photo-url team)}]]
+        [:span.team-text {:title (:name team)} (:name team)]])
 
      [:hr]
-     [:li.action {:on-click on-create-clicked}
+     [:li.action {:on-click on-create-clicked :data-test "create-new-team"}
       (tr "dashboard.create-new-team")]]))
 
 (s/def ::member-id ::us/uuid)
 (s/def ::leave-modal-form
   (s/keys :req-un [::member-id]))
 
-(mf/defc leave-and-reassign-modal
-  {::mf/register modal/components
-   ::mf/register-as ::leave-and-reassign}
-  [{:keys [team accept]}]
-  (let [form        (fm/use-form :spec ::leave-modal-form :initial {})
-
-        members-map (mf/deref refs/dashboard-team-members)
-        members     (vals members-map)
-
-        options     (into [{:value ""
-                            :label (tr "modals.leave-and-reassign.select-member-to-promote")}]
-                          (map #(hash-map :label (:name %) :value (str (:id %))) members))
-
-        on-cancel   (st/emitf (modal/hide))
-        on-accept
-        (fn [_]
-          (let [member-id (get-in @form [:clean-data :member-id])]
-            (accept member-id)))]
-
-    [:div.modal-overlay
-     [:div.modal-container.confirm-dialog
-      [:div.modal-header
-       [:div.modal-header-title
-        [:h2 (tr "modals.leave-and-reassign.title")]]
-       [:div.modal-close-button
-        {:on-click on-cancel} i/close]]
-
-      [:div.modal-content.generic-form
-       [:p (tr "modals.leave-and-reassign.hint1" (:name team))]
-
-       (if (empty? members)
-         [:p (tr "modals.leave-and-reassign.forbiden")]
-         [:*
-          [:p (tr "modals.leave-and-reassign.hint2")]
-          [:& fm/form {:form form}
-           [:& fm/select {:name :member-id
-                          :options options}]]])]
-
-      [:div.modal-footer
-       [:div.action-buttons
-        [:input.cancel-button
-         {:type "button"
-          :value (tr "labels.cancel")
-          :on-click on-cancel}]
-
-        [:input.accept-button
-         {:type "button"
-          :class (if (:valid @form) "primary" "btn-disabled")
-          :disabled (not (:valid @form))
-          :value (tr "modals.leave-and-reassign.promote-and-leave")
-          :on-click on-accept}]]]]]))
-
 (mf/defc team-options-dropdown
   [{:keys [team profile] :as props}]
-  (let [go-members  (st/emitf (dd/go-to-team-members))
-        go-settings (st/emitf (dd/go-to-team-settings))
+  (let [go-members     (st/emitf (dd/go-to-team-members))
+        go-invitations (st/emitf (dd/go-to-team-invitations))
+        go-settings    (st/emitf (dd/go-to-team-settings))
 
-        members-map (mf/deref refs/dashboard-team-members)
-        members     (vals members-map)
+        members-map    (mf/deref refs/dashboard-team-members)
+        members        (vals members-map)
+        can-rename?    (or (get-in team [:permissions :is-owner]) (get-in team [:permissions :is-admin]))
 
         on-success
         (fn []
@@ -298,13 +248,13 @@
         (fn [{:keys [code] :as error}]
           (condp = code
             :no-enough-members-for-leave
-            (rx/of (dm/error (tr "errors.team-leave.insufficient-members")))
+            (rx/of (msg/error (tr "errors.team-leave.insufficient-members")))
 
             :member-does-not-exist
-            (rx/of (dm/error (tr "errors.team-leave.member-does-not-exists")))
+            (rx/of (msg/error (tr "errors.team-leave.member-does-not-exists")))
 
             :owner-cant-leave-team
-            (rx/of (dm/error (tr "errors.team-leave.owner-cant-leave")))
+            (rx/of (msg/error (tr "errors.team-leave.owner-cant-leave")))
 
             (rx/throw error)))
 
@@ -334,10 +284,19 @@
         (fn []
           (st/emit! (dd/fetch-team-members)
                     (modal/show
-                     {:type ::leave-and-reassign
+                     {:type :leave-and-reassign
                       :profile profile
                       :team team
                       :accept leave-fn})))
+
+        leave-and-close
+        (st/emitf (modal/show
+                   {:type :confirm
+                    :title (tr "modals.leave-confirm.title")
+                    :message  (tr "modals.leave-and-close-confirm.message" (:name team))
+                    :scd-message (tr "modals.leave-and-close-confirm.hint")
+                    :accept-label (tr "modals.leave-confirm.accept")
+                    :on-accept delete-fn}))
 
         on-delete-clicked
         (st/emitf
@@ -349,21 +308,26 @@
            :on-accept delete-fn}))]
 
     [:ul.dropdown.options-dropdown
-     [:li {:on-click go-members} (tr "labels.members")]
-     [:li {:on-click go-settings} (tr "labels.settings")]
+     [:li {:on-click go-members :data-test "team-members"} (tr "labels.members")]
+     [:li {:on-click go-invitations :data-test "team-invitations"} (tr "labels.invitations")]
+     [:li {:on-click go-settings :data-test "team-settings"} (tr "labels.settings")]
      [:hr]
-     [:li {:on-click on-rename-clicked} (tr "labels.rename")]
+     (when can-rename?
+       [:li {:on-click on-rename-clicked :data-test "rename-team"} (tr "labels.rename")])
 
      (cond
+       (= (count members) 1)
+       [:li {:on-click leave-and-close}  (tr "dashboard.leave-team")]
+
        (get-in team [:permissions :is-owner])
-       [:li {:on-click on-leave-as-owner-clicked} (tr "dashboard.leave-team")]
+       [:li {:on-click on-leave-as-owner-clicked :data-test "leave-team"} (tr "dashboard.leave-team")]
 
        (> (count members) 1)
        [:li {:on-click on-leave-clicked}  (tr "dashboard.leave-team")])
 
 
      (when (get-in team [:permissions :is-owner])
-       [:li {:on-click on-delete-clicked} (tr "dashboard.delete-team")])]))
+       [:li.warning {:on-click on-delete-clicked :data-test "delete-team"} (tr "dashboard.delete-team")])]))
 
 
 (mf/defc sidebar-team-switch
@@ -466,19 +430,20 @@
 
      [:div.sidebar-content-section
       [:ul.sidebar-nav.no-overflow
-       [:li.recent-projects
+       [:li
         {:on-click go-fonts
+         :data-test "fonts"
          :class-name (when fonts? "current")}
         [:span.element-title (tr "labels.fonts")]]]]
 
      [:hr]
-     [:div.sidebar-content-section
+     [:div.sidebar-content-section {:data-test "pinned-projects"}
       (if (seq pinned-projects)
         [:ul.sidebar-nav
          (for [item pinned-projects]
            [:& sidebar-project
             {:item item
-             :key (:id item)
+             :key (dm/str (:id item))
              :id (:id item)
              :team-id (:id team)
              :selected? (= (:id item) (:id project))}])]
@@ -501,28 +466,42 @@
              (st/emit! section))))]
 
     [:div.profile-section
-     [:div.profile {:on-click #(reset! show true)}
+     [:div.profile {:on-click #(reset! show true)
+                    :data-test "profile-btn"}
       [:img {:src photo}]
-      [:span (:fullname profile)]
+      [:span (:fullname profile)]]
 
      [:& dropdown {:on-close #(reset! show false)
                    :show @show}
       [:ul.dropdown
-       [:li {:on-click (partial on-click :settings-profile)}
+       [:li {:on-click (partial on-click :settings-profile)
+             :data-test "profile-profile-opt"}
         [:span.icon i/user]
-        [:span.text (tr "labels.profile")]]
-       [:li {:on-click (partial on-click :settings-password)}
-        [:span.icon i/lock]
-        [:span.text (tr "labels.password")]]
-       [:li {:on-click #(on-click (du/logout) %)}
-        [:span.icon i/exit]
-        [:span.text (tr "labels.logout")]]
+        [:span.text (tr "labels.your-account")]]
+       [:li.separator {:on-click #(dom/open-new-window "https://help.penpot.app")
+                       :data-test "help-center-profile-opt"}
+        [:span.icon i/help]
+        [:span.text (tr "labels.help-center")]]
+       [:li {:on-click #(dom/open-new-window "https://penpot.app/libraries-templates.html")
+             :data-test "libraries-templates-profile-opt"}
+        [:span.icon i/download]
+        [:span.text (tr "labels.libraries-and-templates")]]
+       ;;[:li {:on-click #(dom/open-new-window "https://penpot.app?no-redirect=1")
+       [:li {:on-click #(dom/open-new-window "https://landing-next.penpot.app?no-redirect=1")
+             :data-test "about-penpot-profile-opt"} ;; Parameter ?no-redirect is to force stay in landing page
+        [:span.icon i/logo-icon]                    ;; instead of redirecting to app
+        [:span.text (tr "labels.about-penpot")]]
 
        (when (contains? @cf/flags :user-feedback)
-         [:li.feedback {:on-click (partial on-click :settings-feedback)}
+         [:li.separator {:on-click (partial on-click :settings-feedback)
+                         :data-test "feedback-profile-opt"}
           [:span.icon i/msg-info]
-          [:span.text (tr "labels.give-feedback")]
-          ])]]]
+          [:span.text (tr "labels.give-feedback")]])
+
+       [:li.separator {:on-click #(on-click (du/logout) %)
+                       :data-test "logout-profile-opt"}
+        [:span.icon i/exit]
+        [:span.text (tr "labels.logout")]]]]
 
      (when (and team profile)
        [:& comments-section {:profile profile

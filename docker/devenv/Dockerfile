@@ -3,10 +3,10 @@ LABEL maintainer="Andrey Antukh <niwi@niwi.nz>"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-ENV NODE_VERSION=v16.13.1 \
-    CLOJURE_VERSION=1.10.3.1058 \
-    CLJKONDO_VERSION=2021.12.19 \
-    BABASHKA_VERSION=0.7.3 \
+ENV NODE_VERSION=v16.14.0 \
+    CLOJURE_VERSION=1.10.3.1075 \
+    CLJKONDO_VERSION=2022.02.09 \
+    BABASHKA_VERSION=0.7.6 \
     LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8
 
@@ -111,7 +111,7 @@ RUN set -x; \
     rm -rf /tmp/chrome.deb;
 
 RUN set -ex; \
-    curl -LfsSo /tmp/openjdk.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.1%2B12/OpenJDK17U-jdk_x64_linux_hotspot_17.0.1_12.tar.gz; \
+    curl -LfsSo /tmp/openjdk.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.2%2B8/OpenJDK17U-jdk_x64_linux_hotspot_17.0.2_8.tar.gz; \
     mkdir -p /usr/lib/jvm/openjdk17; \
     cd /usr/lib/jvm/openjdk17; \
     tar -xf /tmp/openjdk.tar.gz --strip-components=1; \
@@ -157,6 +157,14 @@ RUN set -ex; \
     cd /usr/local/bin; \
     tar -xf /tmp/babashka.tar.gz; \
     rm -rf /tmp/babashka.tar.gz;
+
+RUN set -ex; \
+    curl -LfsSo /usr/bin/local/mc https://dl.min.io/client/mc/release/linux-amd64/mc; \
+    chmod +x /usr/bin/local/mc; \
+    /usr/bin/local/mc alias set penpot-s3/ http://minio:9000 minioadmin minioadmin; \
+    /usr/bin/local/mc admin user add penpot-s3 penpot-devenv penpot-devenv; \
+    /usr/bin/local/mc admin policy set penpot-s3 readwrite user=penpot-devenv; \
+    /usr/bin/local/mc mb penpot-s3/penpot -p;
 
 WORKDIR /home
 

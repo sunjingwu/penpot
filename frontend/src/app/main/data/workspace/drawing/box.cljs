@@ -9,7 +9,7 @@
    [app.common.geom.point :as gpt]
    [app.common.geom.shapes :as gsh]
    [app.common.math :as mth]
-   [app.common.pages :as cp]
+   [app.common.pages.helpers :as cph]
    [app.common.uuid :as uuid]
    [app.main.data.workspace.drawing.common :as common]
    [app.main.data.workspace.state-helpers :as wsh]
@@ -60,9 +60,10 @@
             page-id (:current-page-id state)
             objects (wsh/lookup-page-objects state page-id)
             layout  (get state :workspace-layout)
+            focus   (:workspace-focus-selected state)
             zoom    (get-in state [:workspace-local :zoom] 1)
 
-            frames  (cp/select-frames objects)
+            frames  (cph/get-frames objects)
             fid     (or (->> frames
                              (filter #(gsh/has-point? % initial))
                              first
@@ -80,7 +81,7 @@
          (rx/of #(assoc-in state [:workspace-drawing :object] shape))
 
          ;; Initial SNAP
-         (->> (snap/closest-snap-point page-id [shape] layout zoom initial)
+         (->> (snap/closest-snap-point page-id [shape] objects layout zoom focus initial)
               (rx/map move-drawing))
 
          (->> ms/mouse-position
@@ -88,7 +89,7 @@
               (rx/with-latest vector ms/mouse-position-shift)
               (rx/switch-map
                (fn [[point :as current]]
-                 (->> (snap/closest-snap-point page-id [shape] layout zoom point)
+                 (->> (snap/closest-snap-point page-id [shape] objects layout zoom focus point)
                       (rx/map #(conj current %)))))
               (rx/map
                (fn [[_ shift? point]]

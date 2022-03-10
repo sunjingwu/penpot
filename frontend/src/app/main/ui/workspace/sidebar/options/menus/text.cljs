@@ -301,6 +301,7 @@
         opts #js {:ids ids
                   :values values
                   :on-change on-change
+                  :show-recent true
                   :on-blur
                   (fn []
                     (tm/schedule
@@ -346,5 +347,3 @@
       [:div.row-flex
        [:> grow-options opts]
        [:div.align-icons]]]]))
-
-

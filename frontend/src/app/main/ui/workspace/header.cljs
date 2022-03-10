@@ -18,6 +18,7 @@
    [app.main.repo :as rp]
    [app.main.store :as st]
    [app.main.ui.components.dropdown :refer [dropdown]]
+   [app.main.ui.hooks.resize :as r]
    [app.main.ui.icons :as i]
    [app.main.ui.workspace.presence :refer [active-sessions]]
    [app.util.dom :as dom]
@@ -99,13 +100,11 @@
 
 (mf/defc menu
   [{:keys [layout project file team-id page-id] :as props}]
-  (let [show-menu? (mf/use-state false)
+  (let [show-menu?     (mf/use-state false)
         show-sub-menu? (mf/use-state false)
-        editing?   (mf/use-state false)
-
-        frames (mf/deref refs/workspace-frames)
-
+        editing?       (mf/use-state false)
         edit-input-ref (mf/use-ref nil)
+        frames         (mf/deref refs/workspace-frames)
 
         add-shared-fn
         (st/emitf (dw/set-file-shared (:id file) true))
@@ -194,7 +193,26 @@
                      (fn [_error]
                        (st/emit! (dm/error (tr "errors.unexpected-error"))))
                      (st/emitf dm/hide)))))))
-        on-item-click (fn [item] (fn [event] (do (dom/stop-propagation event) (reset! show-sub-menu? item))))]
+
+        on-item-hover
+        (mf/use-callback
+         (fn [item]
+           (fn [event]
+             (dom/stop-propagation event)
+             (reset! show-sub-menu? item))))
+
+        on-item-click
+        (mf/use-callback
+         (fn [item]
+           (fn [event]
+             (dom/stop-propagation event)
+             (reset! show-sub-menu? item))))
+
+        toggle-flag
+        (mf/use-callback
+         (fn [flag]
+           (-> (dw/toggle-layout-flag flag)
+               (vary-meta assoc ::ev/origin "workspace-menu"))))]
 
     (mf/use-effect
      (mf/deps @editing?)
@@ -225,19 +243,22 @@
      [:& dropdown {:show @show-menu?
                    :on-close #(reset! show-menu? false)}
       [:ul.menu
-       [:li {:on-click (on-item-click :file)}
+       [:li {:on-click (on-item-click :file)
+             :on-pointer-enter (on-item-hover :file)}
         [:span (tr "workspace.header.menu.option.file")]
         [:span i/arrow-slide]]
-       [:li {:on-click (on-item-click :edit)}
+       [:li {:on-click (on-item-click :edit)
+             :on-pointer-enter (on-item-hover :edit)}
         [:span (tr "workspace.header.menu.option.edit")] [:span i/arrow-slide]]
-       [:li {:on-click (on-item-click :view)}
+       [:li {:on-click (on-item-click :view)
+             :on-pointer-enter (on-item-hover :view)}
         [:span (tr "workspace.header.menu.option.view")] [:span i/arrow-slide]]
-       [:li {:on-click (on-item-click :preferences)}
+       [:li {:on-click (on-item-click :preferences)
+             :on-pointer-enter (on-item-hover :preferences)}
         [:span (tr "workspace.header.menu.option.preferences")] [:span i/arrow-slide]]
        (when (contains? @cf/flags :user-feedback)
          [:*
-          [:li.separator]
-          [:li.feedback {:on-click (st/emitf (rt/nav :settings-feedback))}
+          [:li.feedback {:on-click (st/emitf (rt/nav-new-window* {:rname :settings-feedback}))}
            [:span (tr "labels.give-feedback")]]])]]
 
      [:& dropdown {:show (= @show-sub-menu? :file)
@@ -260,7 +281,7 @@
        [:li {:on-click #(st/emit! (dw/select-all))}
         [:span (tr "workspace.header.menu.select-all")]
         [:span.shortcut (sc/get-tooltip :select-all)]]
-       [:li {:on-click #(st/emit! (dw/toggle-layout-flags :scale-text))}
+       [:li {:on-click #(st/emit! (toggle-flag :scale-text))}
         [:span
          (if (contains? layout :scale-text)
            (tr "workspace.header.menu.disable-scale-text")
@@ -270,70 +291,93 @@
      [:& dropdown {:show (= @show-sub-menu? :view)
                    :on-close #(reset! show-sub-menu? false)}
       [:ul.sub-menu.view
-       [:li {:on-click #(st/emit! (dw/toggle-layout-flags :rules))}
+       [:li {:on-click #(st/emit! (toggle-flag :rules))}
         [:span
          (if (contains? layout :rules)
            (tr "workspace.header.menu.hide-rules")
            (tr "workspace.header.menu.show-rules"))]
         [:span.shortcut (sc/get-tooltip :toggle-rules)]]
 
-       [:li {:on-click #(st/emit! (dw/toggle-layout-flags :display-grid))}
+       [:li {:on-click #(st/emit! (toggle-flag :display-grid))}
         [:span
          (if (contains? layout :display-grid)
            (tr "workspace.header.menu.hide-grid")
            (tr "workspace.header.menu.show-grid"))]
         [:span.shortcut (sc/get-tooltip :toggle-grid)]]
 
-       [:li {:on-click #(st/emit! (dw/toggle-layout-flags :sitemap :layers))}
+       [:li {:on-click #(st/emit! (toggle-flag :sitemap)
+                                  (toggle-flag :layers))}
         [:span
          (if (or (contains? layout :sitemap) (contains? layout :layers))
            (tr "workspace.header.menu.hide-layers")
            (tr "workspace.header.menu.show-layers"))]
         [:span.shortcut (sc/get-tooltip :toggle-layers)]]
 
-       [:li {:on-click #(st/emit! (dw/toggle-layout-flags :colorpalette))}
+       [:li {:on-click (fn []
+                         (r/set-resize-type! :bottom)
+                         (st/emit! (dw/remove-layout-flag :textpalette)
+                                   (toggle-flag :colorpalette)))}
         [:span
          (if (contains? layout :colorpalette)
            (tr "workspace.header.menu.hide-palette")
            (tr "workspace.header.menu.show-palette"))]
-        [:span.shortcut (sc/get-tooltip :toggle-palette)]]
+        [:span.shortcut (sc/get-tooltip :toggle-colorpalette)]]
 
-       [:li {:on-click #(st/emit! (dw/toggle-layout-flags :assets))}
+       [:li {:on-click (fn []
+                         (r/set-resize-type! :bottom)
+                         (st/emit! (dw/remove-layout-flag :colorpalette)
+                                   (toggle-flag :textpalette)))}
+        [:span
+         (if (contains? layout :textpalette)
+           (tr "workspace.header.menu.hide-textpalette")
+           (tr "workspace.header.menu.show-textpalette"))]
+        [:span.shortcut (sc/get-tooltip :toggle-textpalette)]]
+
+       [:li {:on-click #(st/emit! (toggle-flag :assets))}
         [:span
          (if (contains? layout :assets)
            (tr "workspace.header.menu.hide-assets")
            (tr "workspace.header.menu.show-assets"))]
         [:span.shortcut (sc/get-tooltip :toggle-assets)]]
 
-       [:li {:on-click #(st/emit! (dw/toggle-layout-flags :display-artboard-names))}
+       [:li {:on-click #(st/emit! (toggle-flag :display-artboard-names))}
         [:span
          (if (contains? layout :display-artboard-names)
            (tr "workspace.header.menu.hide-artboard-names")
-           (tr "workspace.header.menu.show-artboard-names"))]]]]
+           (tr "workspace.header.menu.show-artboard-names"))]]
+
+       [:li {:on-click #(st/emit! (-> (toggle-flag :hide-ui)
+                                      (vary-meta assoc ::ev/origin "workspace-menu")))}
+        [:span
+         (tr "workspace.shape.menu.hide-ui")]
+        [:span.shortcut (sc/get-tooltip :hide-ui)]]]]
 
      [:& dropdown {:show (= @show-sub-menu? :preferences)
                    :on-close #(reset! show-sub-menu? false)}
       [:ul.sub-menu.preferences
-       #_[:li {:on-click #()}
-          [:span
-           (if (contains? layout :snap-guide)
-             (tr "workspace.header.menu.disable-snap-guides")
-             (tr "workspace.header.menu.enable-snap-guides"))]
-          [:span.shortcut (sc/get-tooltip :toggle-snap-grid)]]
+       [:li {:on-click #(st/emit! (toggle-flag :snap-guides))}
+        [:span
+         (if (contains? layout :snap-guides)
+           (tr "workspace.header.menu.disable-snap-guides")
+           (tr "workspace.header.menu.enable-snap-guides"))]
+        [:span.shortcut (sc/get-tooltip :toggle-snap-guide)]]
 
-       [:li {:on-click #(st/emit! (dw/toggle-layout-flags :snap-grid))}
+       [:li {:on-click #(st/emit! (toggle-flag :snap-grid))}
         [:span
          (if (contains? layout :snap-grid)
            (tr "workspace.header.menu.disable-snap-grid")
            (tr "workspace.header.menu.enable-snap-grid"))]
         [:span.shortcut (sc/get-tooltip :toggle-snap-grid)]]
 
-       [:li {:on-click #(st/emit! (dw/toggle-layout-flags :dynamic-alignment))}
+       [:li {:on-click #(st/emit! (toggle-flag :dynamic-alignment))}
         [:span
          (if (contains? layout :dynamic-alignment)
            (tr "workspace.header.menu.disable-dynamic-alignment")
            (tr "workspace.header.menu.enable-dynamic-alignment"))]
-        [:span.shortcut (sc/get-tooltip :toggle-alignment)]]]]]))
+        [:span.shortcut (sc/get-tooltip :toggle-alignment)]]
+
+       [:li {:on-click #(st/emit! (modal/show {:type :nudge-option}))}
+        [:span (tr "modals.nudge-title")]]]]]))
 
 ;; --- Header Component
 
@@ -354,31 +398,41 @@
          (st/emitf (dw/go-to-viewer params)))]
 
     [:header.workspace-header
-     [:div.main-icon
-      [:a {:on-click go-back} i/logo-icon]]
+     [:div.left-area
+      [:div.main-icon
+       [:a {:on-click go-back} i/logo-icon]]
 
-     [:& menu {:layout layout
-               :project project
-               :file file
-               :team-id team-id
-               :page-id page-id}]
+      [:& menu {:layout layout
+                :project project
+                :file file
+                :team-id team-id
+                :page-id page-id}]]
 
-     [:div.users-section
-      [:& active-sessions]]
+     [:div.center-area
+      [:div.users-section
+       [:& active-sessions]]]
 
-     [:div.options-section
-      [:& persistence-state-widget]
+     [:div.right-area
+      [:div.options-section
+       [:& persistence-state-widget]
+       [:button.document-history
+        {:alt (tr "workspace.sidebar.history" (sc/get-tooltip :toggle-history))
+         :class (when (contains? layout :document-history) "selected")
+         :on-click #(st/emit! (-> (dw/toggle-layout-flag :document-history)
+                                  (vary-meta assoc ::ev/origin "workspace-header")))}
+        i/recent]]
 
-      [:& zoom-widget-workspace
-       {:zoom zoom
-        :on-increase #(st/emit! (dw/increase-zoom nil))
-        :on-decrease #(st/emit! (dw/decrease-zoom nil))
-        :on-zoom-reset #(st/emit! dw/reset-zoom)
-        :on-zoom-fit #(st/emit! dw/zoom-to-fit-all)
-        :on-zoom-selected #(st/emit! dw/zoom-to-selected-shape)}]
+      [:div.options-section
+       [:& zoom-widget-workspace
+        {:zoom zoom
+         :on-increase #(st/emit! (dw/increase-zoom nil))
+         :on-decrease #(st/emit! (dw/decrease-zoom nil))
+         :on-zoom-reset #(st/emit! dw/reset-zoom)
+         :on-zoom-fit #(st/emit! dw/zoom-to-fit-all)
+         :on-zoom-selected #(st/emit! dw/zoom-to-selected-shape)}]
 
-      [:a.btn-icon-dark.btn-small.tooltip.tooltip-bottom-left
-       {:alt (tr "workspace.header.viewer" (sc/get-tooltip :open-viewer))
-        :on-click go-viewer}
-       i/play]]]))
+       [:a.btn-icon-dark.btn-small.tooltip.tooltip-bottom-left
+        {:alt (tr "workspace.header.viewer" (sc/get-tooltip :open-viewer))
+         :on-click go-viewer}
+        i/play]]]]))
 

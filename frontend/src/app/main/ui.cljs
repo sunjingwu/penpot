@@ -71,6 +71,7 @@
         :dashboard-fonts
         :dashboard-font-providers
         :dashboard-team-members
+        :dashboard-team-invitations
         :dashboard-team-settings)
 
        [:*
@@ -83,7 +84,6 @@
             (and cf/onboarding-form-id
                  (not (:onboarding-questions-answered props false))
                  (not (:onboarding-viewed props false)))
-
             [:& app.main.ui.onboarding.questions/questions
              {:profile profile
               :form-id cf/onboarding-form-id}]
@@ -94,7 +94,7 @@
             (and (:onboarding-viewed props)
                  (not= (:release-notes-viewed props) (:main @cf/version))
                  (not= "0.0" (:main @cf/version)))
-            [:& app.main.ui.releases/release-notes-modal {}]))
+            [:& app.main.ui.releases/release-notes-modal {:version (:main @cf/version)}]))
 
         [:& dashboard {:route route :profile profile}]]
 

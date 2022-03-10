@@ -183,21 +183,19 @@
 }
 
 input.element-name {
-  max-width: 130px;
-  width: 100%;
+  max-width: 75%;
 }
 
 span.element-name {
   color: $color-gray-20;
   display: block;
   font-size: $fs12;
-  max-width: 130px;
+  max-width: 75%;
   min-width: 40px;
   min-height: 16px;
   overflow-x: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  width: 100%;
 }
 
 .element-actions {
@@ -207,6 +205,11 @@ span.element-name {
   margin-left: auto;
   position: relative;
   width: 32px;
+  right: 20px;
+
+  &.is-parent {
+    right: 0;
+  }
 
   svg {
     height: 13px;
@@ -242,7 +245,7 @@ span.element-name {
 }
 
 .toggle-content {
-  margin-left: auto;
+  margin-left: 8px;
   width: 12px;
 
   svg {

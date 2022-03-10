@@ -3,7 +3,7 @@
   org.clojure/data.json {:mvn/version "2.4.0"}
   org.clojure/tools.cli {:mvn/version "1.0.206"}
   metosin/jsonista {:mvn/version "0.3.5"}
-  org.clojure/clojurescript {:mvn/version "1.10.914"}
+  org.clojure/clojurescript {:mvn/version "1.11.4"}
 
   ;; Logging
   org.apache.logging.log4j/log4j-api {:mvn/version "2.17.1"}
@@ -13,18 +13,18 @@
   org.apache.logging.log4j/log4j-slf4j18-impl {:mvn/version "2.17.1"}
   org.slf4j/slf4j-api {:mvn/version "2.0.0-alpha1"}
 
-  selmer/selmer {:mvn/version "1.12.49"}
+  selmer/selmer {:mvn/version "1.12.50"}
   criterium/criterium {:mvn/version "0.4.6"}
 
   expound/expound {:mvn/version "0.9.0"}
-  com.cognitect/transit-clj {:mvn/version "1.0.324"}
+  com.cognitect/transit-clj {:mvn/version "1.0.329"}
   com.cognitect/transit-cljs {:mvn/version "0.8.269"}
   java-http-clj/java-http-clj {:mvn/version "0.4.3"}
 
-  funcool/promesa {:mvn/version "6.0.2"}
+  funcool/promesa {:mvn/version "8.0.450"}
   funcool/cuerdas {:mvn/version "2022.01.14-391"}
 
-  lambdaisland/uri {:mvn/version "1.12.89"
+  lambdaisland/uri {:mvn/version "1.13.95"
                     :exclusions [org.clojure/data.json]}
 
   frankiesardo/linked {:mvn/version "1.3.0"}
@@ -42,9 +42,8 @@
   {:extra-deps
    {org.clojure/tools.namespace {:mvn/version "RELEASE"}
     org.clojure/test.check {:mvn/version "RELEASE"}
-    org.clojure/tools.deps.alpha {:mvn/version "RELEASE"}
+    thheller/shadow-cljs {:mvn/version "2.17.5"}
     com.bhauman/rebel-readline {:mvn/version "RELEASE"}
-    thheller/shadow-cljs {:mvn/version "2.16.12"}
     criterium/criterium {:mvn/version "RELEASE"}
     mockery/mockery {:mvn/version "RELEASE"}}
    :extra-paths ["test" "dev"]}

@@ -21,12 +21,12 @@
 
 (def type->options
   {:multiple [:fill :stroke :image :text :shadow :blur]
-   :frame    [:layout :fill]
+   :frame    [:layout :fill :stroke]
    :group    [:layout :svg]
    :rect     [:layout :fill :stroke :shadow :blur :svg]
    :circle   [:layout :fill :stroke :shadow :blur :svg]
    :path     [:layout :fill :stroke :shadow :blur :svg]
-   :image    [:image :layout :shadow :blur :svg]
+   :image    [:image :layout :fill :stroke :shadow :blur :svg]
    :text     [:layout :text :shadow :blur]})
 
 (mf/defc attributes

@@ -6,18 +6,19 @@
 
 (ns app.rpc.mutations.fonts
   (:require
+   [app.common.data :as d]
    [app.common.exceptions :as ex]
    [app.common.spec :as us]
    [app.common.uuid :as uuid]
-   [app.config :as cf]
    [app.db :as db]
    [app.media :as media]
    [app.rpc.queries.teams :as teams]
    [app.storage :as sto]
-   [app.util.rlimit :as rlimit]
    [app.util.services :as sv]
    [app.util.time :as dt]
-   [clojure.spec.alpha :as s]))
+   [clojure.spec.alpha :as s]
+   [promesa.core :as p]
+   [promesa.exec :as px]))
 
 (declare create-font-variant)
 
@@ -31,7 +32,6 @@
 (s/def ::weight valid-weight)
 (s/def ::style valid-style)
 (s/def ::font-id ::us/uuid)
-(s/def ::content-type ::media/font-content-type)
 (s/def ::data (s/map-of ::us/string any?))
 
 (s/def ::create-font-variant
@@ -39,52 +39,75 @@
                    ::font-id ::font-family ::font-weight ::font-style]))
 
 (sv/defmethod ::create-font-variant
-  {::rlimit/permits (cf/get :rlimit-font)}
   [{:keys [pool] :as cfg} {:keys [team-id profile-id] :as params}]
-  (db/with-atomic [conn pool]
-    (let [cfg (assoc cfg :conn conn)]
-      (teams/check-edition-permissions! conn profile-id team-id)
-      (create-font-variant cfg params))))
+  (let [cfg (update cfg :storage media/configure-assets-storage)]
+    (teams/check-edition-permissions! pool profile-id team-id)
+    (create-font-variant cfg params)))
 
 (defn create-font-variant
-  [{:keys [conn storage] :as cfg} {:keys [data] :as params}]
-  (let [data    (media/run {:cmd :generate-fonts :input data})
-        storage (media/configure-assets-storage storage conn)
+  [{:keys [storage pool executors] :as cfg} {:keys [data] :as params}]
+  (letfn [(generate-fonts [data]
+            (px/with-dispatch (:blocking executors)
+              (media/run {:cmd :generate-fonts :input data})))
 
-        otf     (when-let [fdata (get data "font/otf")]
-                  (sto/put-object storage {:content (sto/content fdata)
-                                           :content-type "font/otf"}))
+          ;; Function responsible of calculating cryptographyc hash of
+          ;; the provided data. Even though it uses the hight
+          ;; performance BLAKE2b algorithm, we prefer to schedule it
+          ;; to be executed on the blocking executor.
+          (calculate-hash [data]
+            (px/with-dispatch (:blocking executors)
+              (sto/calculate-hash data)))
 
-        ttf     (when-let [fdata (get data "font/ttf")]
-                  (sto/put-object storage {:content (sto/content fdata)
-                                           :content-type "font/ttf"}))
+          (validate-data [data]
+            (when (and (not (contains? data "font/otf"))
+                       (not (contains? data "font/ttf"))
+                       (not (contains? data "font/woff"))
+                       (not (contains? data "font/woff2")))
+              (ex/raise :type :validation
+                        :code :invalid-font-upload))
+            data)
 
-        woff1   (when-let [fdata (get data "font/woff")]
-                  (sto/put-object storage {:content (sto/content fdata)
-                                           :content-type "font/woff"}))
+          (persist-font-object [data mtype]
+            (when-let [fdata (get data mtype)]
+              (p/let [hash    (calculate-hash fdata)
+                      content (-> (sto/content fdata)
+                                  (sto/wrap-with-hash hash))]
+                (sto/put-object! storage {::sto/content content
+                                          ::sto/touched-at (dt/now)
+                                          ::sto/deduplicate? true
+                                          :content-type mtype
+                                          :bucket "team-font-variant"}))))
 
-        woff2   (when-let [fdata (get data "font/woff2")]
-                  (sto/put-object storage {:content (sto/content fdata)
-                                           :content-type "font/woff2"}))]
+          (persist-fonts [data]
+            (p/let [otf   (persist-font-object data "font/otf")
+                    ttf   (persist-font-object data "font/ttf")
+                    woff1 (persist-font-object data "font/woff")
+                    woff2 (persist-font-object data "font/woff2")]
 
-    (when (and (nil? otf)
-               (nil? ttf)
-               (nil? woff1)
-               (nil? woff2))
-      (ex/raise :type :validation
-                :code :invalid-font-upload))
+              (d/without-nils
+               {:otf otf
+                :ttf ttf
+                :woff1 woff1
+                :woff2 woff2})))
 
-    (db/insert! conn :team-font-variant
-                {:id (uuid/next)
-                 :team-id (:team-id params)
-                 :font-id (:font-id params)
-                 :font-family (:font-family params)
-                 :font-weight (:font-weight params)
-                 :font-style (:font-style params)
-                 :woff1-file-id (:id woff1)
-                 :woff2-file-id (:id woff2)
-                 :otf-file-id (:id otf)
-                 :ttf-file-id (:id ttf)})))
+          (insert-into-db [{:keys [woff1 woff2 otf ttf]}]
+            (db/insert! pool :team-font-variant
+                        {:id (uuid/next)
+                         :team-id (:team-id params)
+                         :font-id (:font-id params)
+                         :font-family (:font-family params)
+                         :font-weight (:font-weight params)
+                         :font-style (:font-style params)
+                         :woff1-file-id (:id woff1)
+                         :woff2-file-id (:id woff2)
+                         :otf-file-id (:id otf)
+                         :ttf-file-id (:id ttf)}))
+          ]
+
+    (-> (generate-fonts data)
+        (p/then validate-data)
+        (p/then persist-fonts (:default executors))
+        (p/then insert-into-db (:default executors)))))
 
 ;; --- UPDATE FONT FAMILY
 

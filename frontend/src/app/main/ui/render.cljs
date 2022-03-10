@@ -6,11 +6,12 @@
 
 (ns app.main.ui.render
   (:require
+   [app.common.data :as d]
    [app.common.geom.matrix :as gmt]
    [app.common.geom.point :as gpt]
    [app.common.geom.shapes :as gsh]
    [app.common.math :as mth]
-   [app.common.pages :as cp]
+   [app.common.pages.helpers :as cph]
    [app.common.uuid :as uuid]
    [app.main.data.fonts :as df]
    [app.main.render :as render]
@@ -20,6 +21,7 @@
    [app.main.ui.shapes.embed :as embed]
    [app.main.ui.shapes.filters :as filters]
    [app.main.ui.shapes.shape :refer [shape-container]]
+   [app.main.ui.shapes.text.fontfaces :as ff]
    [app.util.dom :as dom]
    [beicon.core :as rx]
    [cuerdas.core :as str]
@@ -60,7 +62,7 @@
                      (gpt/negate)
                      (gmt/translate-matrix))
 
-        mod-ids  (cons frame-id (cp/get-children frame-id objects))
+        mod-ids  (cons frame-id (cph/get-children-ids objects frame-id))
         updt-fn  #(-> %1
                       (assoc-in [%2 :modifiers :displacement] modifier)
                       (update %2 gsh/transform-shape))
@@ -70,7 +72,9 @@
 
         object (cond-> object
                  (:hide-fill-on-export object)
-                 (assoc :fill-color nil :fill-opacity 0))
+                 (assoc :fills []))
+
+        all-children (cph/get-children objects object-id)
 
         {:keys [x y width height] :as bs} (calc-bounds object objects)
         [_ _ width height :as coords] (->> [x y width height] (map #(* % zoom)))
@@ -89,10 +93,11 @@
         (mf/with-memo [objects]
           (render/shape-wrapper-factory objects))
 
-        text-shapes
-        (->> objects
-             (filter (fn [[_ shape]] (= :text (:type shape))))
-             (mapv second))]
+        is-text? (fn [shape] (= :text (:type shape)))
+
+        text-shapes (sequence (comp (map second) (filter is-text?)) objects)
+
+        render-texts? (and render-texts? (d/seek (comp nil? :position-data) text-shapes))]
 
     (mf/with-effect [width height]
       (dom/set-page-style {:size (str (mth/ceil width) "px "
@@ -109,6 +114,8 @@
             ;; Fix Chromium bug about color of html texts
             ;; https://bugs.chromium.org/p/chromium/issues/detail?id=1244560#c5
             :style {:-webkit-print-color-adjust :exact}}
+
+      [:& ff/fontfaces-style {:shapes all-children}]
 
       (case (:type object)
         :frame [:& frame-wrapper {:shape object :view-box vbox}]
@@ -133,7 +140,7 @@
   [objects object-id]
   (if (uuid/zero? object-id)
     (let [object   (get objects object-id)
-          shapes   (cp/select-toplevel-shapes objects {:include-frames? true})
+          shapes   (cph/get-immediate-children objects)
           srect    (gsh/selection-rect shapes)
           object   (merge object (select-keys srect [:x :y :width :height]))
           object   (gsh/transform-shape object)

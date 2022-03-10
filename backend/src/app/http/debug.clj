@@ -17,11 +17,17 @@
    [app.util.blob :as blob]
    [app.util.template :as tmpl]
    [app.util.time :as dt]
+   [app.worker :as wrk]
    [clojure.java.io :as io]
-   [clojure.pprint :as ppr]
+   [clojure.spec.alpha :as s]
    [cuerdas.core :as str]
    [datoteka.core :as fs]
-   [integrant.core :as ig]))
+   [fipp.edn :as fpp]
+   [integrant.core :as ig]
+   [promesa.core :as p]
+   [promesa.exec :as px]
+   [yetti.request :as yrq]
+   [yetti.response :as yrs]))
 
 ;; (selmer.parser/cache-off!)
 
@@ -37,11 +43,10 @@
   (when-not (authorized? pool request)
     (ex/raise :type :authentication
               :code :only-admins-allowed))
-
-  {:status 200
-   :headers {"content-type" "text/html"}
-   :body (-> (io/resource "templates/debug.tmpl")
-             (tmpl/render {}))})
+  (yrs/response :status  200
+                :headers {"content-type" "text/html"}
+                :body    (-> (io/resource "templates/debug.tmpl")
+                             (tmpl/render {}))))
 
 
 (def sql:retrieve-range-of-changes
@@ -57,13 +62,14 @@
               :code :enpty-data
               :hint "empty response"))
 
-  (cond-> {:status 200
-           :headers {"content-type" "application/transit+json"}
-           :body body}
+  (cond-> (yrs/response :status  200
+                        :body    body
+                        :headers {"content-type" "application/transit+json"})
     (contains? params :download)
     (update :headers assoc "content-disposition" "attachment")))
 
-(defn retrieve-file-data
+
+(defn- retrieve-file-data
   [{:keys [pool]} {:keys [params] :as request}]
   (when-not (authorized? pool request)
     (ex/raise :type :authentication
@@ -83,22 +89,28 @@
             (update :headers assoc "content-type" "application/octet-stream"))
         (prepare-response request (some-> data blob/decode))))))
 
-(defn upload-file-data
+(defn- upload-file-data
   [{:keys [pool]} {:keys [profile-id params] :as request}]
   (let [project-id (some-> (profile/retrieve-additional-data pool profile-id) :default-project-id)
         data       (some-> params :file :tempfile fs/slurp-bytes blob/decode)]
 
     (if (and data project-id)
-      (do
+      (let [fname (str "imported-file-" (dt/now))]
         (m.files/create-file pool {:id (uuid/next)
-                                   :name "imported-file"
+                                   :name fname
                                    :project-id project-id
                                    :profile-id profile-id
                                    :data data})
-        {:status 200
-         :body "OK"})
-      {:status 500
-       :body "error"})))
+        (yrs/response 200 "OK"))
+      (yrs/response 500 "ERROR"))))
+
+(defn file-data
+  [cfg request]
+  (case (yrq/method request)
+    :get (retrieve-file-data cfg request)
+    :post (upload-file-data cfg request)
+    (ex/raise :type :http
+              :code :method-not-found)))
 
 (defn retrieve-file-changes
   [{:keys [pool]} request]
@@ -147,21 +159,20 @@
              (some-> (db/get-by-id pool :server-error-report id) :content db/decode-transit-pgobject)))
 
           (render-template [report]
-            (binding [ppr/*print-right-margin* 300]
-              (let [context (dissoc report
-                                    :trace :cause :params :data :spec-problems
-                                    :spec-value :error :explain :hint)
-                    params  {:context (with-out-str (ppr/pprint context))
-                             :hint    (:hint report)
-                             :spec-problems (:spec-problems report)
-                             :spec-value    (:spec-value report)
-                             :data          (:data report)
-                             :trace         (or (:cause report)
-                                                (:trace report)
-                                                (some-> report :error :trace))
-                             :params        (:params report)}]
-                (-> (io/resource "templates/error-report.tmpl")
-                    (tmpl/render params)))))
+            (let [context (dissoc report
+                                  :trace :cause :params :data :spec-problems
+                                  :spec-explain :spec-value :error :explain :hint)
+                  params  {:context (with-out-str (fpp/pprint context {:width 300}))
+                           :hint    (:hint report)
+                           :spec-explain  (:spec-explain report)
+                           :spec-problems (:spec-problems report)
+                           :spec-value    (:spec-value report)
+                           :data          (:data report)
+                           :trace         (or (:trace report)
+                                              (some-> report :error :trace))
+                           :params        (:params report)}]
+              (-> (io/resource "templates/error-report.tmpl")
+                  (tmpl/render params))))
           ]
 
     (when-not (authorized? pool request)
@@ -172,12 +183,11 @@
                          (retrieve-report)
                          (render-template))]
       (if result
-        {:status 200
-         :headers {"content-type" "text/html; charset=utf-8"
-                   "x-robots-tag" "noindex"}
-         :body result}
-        {:status 404
-         :body "not found"}))))
+        (yrs/response :status 200
+                      :body result
+                      :headers {"content-type" "text/html; charset=utf-8"
+                                "x-robots-tag" "noindex"})
+        (yrs/response 404 "not found")))))
 
 (def sql:error-reports
   "select id, created_at from server_error_report order by created_at desc limit 100")
@@ -189,17 +199,34 @@
               :code :only-admins-allowed))
   (let [items (db/exec! pool [sql:error-reports])
         items (map #(update % :created-at dt/format-instant :rfc1123) items)]
-    {:status 200
-     :headers {"content-type" "text/html; charset=utf-8"
-               "x-robots-tag" "noindex"}
-     :body (-> (io/resource "templates/error-list.tmpl")
-               (tmpl/render {:items items}))}))
+    (yrs/response :status 200
+                  :body (-> (io/resource "templates/error-list.tmpl")
+                            (tmpl/render {:items items}))
+                  :headers {"content-type" "text/html; charset=utf-8"
+                            "x-robots-tag" "noindex"})))
+
+(defn health-check
+  "Mainly a task that performs a health check."
+  [{:keys [pool]} _]
+  (db/with-atomic [conn pool]
+    (db/exec-one! conn ["select count(*) as count from server_prop;"])
+    (yrs/response 200 "OK")))
+
+(defn- wrap-async
+  [{:keys [executor] :as cfg} f]
+  (fn [request respond raise]
+    (-> (px/submit! executor #(f cfg request))
+        (p/then respond)
+        (p/catch raise))))
+
+(defmethod ig/pre-init-spec ::handlers [_]
+  (s/keys :req-un [::db/pool ::wrk/executor]))
 
 (defmethod ig/init-key ::handlers
   [_ cfg]
-  {:index (partial index cfg)
-   :retrieve-file-data (partial retrieve-file-data cfg)
-   :retrieve-file-changes (partial retrieve-file-changes cfg)
-   :retrieve-error (partial retrieve-error cfg)
-   :retrieve-error-list (partial retrieve-error-list cfg)
-   :upload-file-data (partial upload-file-data cfg)})
+  {:index (wrap-async cfg index)
+   :health-check (wrap-async cfg health-check)
+   :retrieve-file-changes (wrap-async cfg retrieve-file-changes)
+   :retrieve-error (wrap-async cfg retrieve-error)
+   :retrieve-error-list (wrap-async cfg retrieve-error-list)
+   :file-data (wrap-async cfg file-data)})

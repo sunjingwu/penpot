@@ -21,7 +21,8 @@
 (def initial-state
   {:current-file-id current-file-id
    :current-page-id nil
-   :workspace-local dw/workspace-local-default
+   :workspace-global dw/default-workspace-global
+   :workspace-local dw/default-workspace-local
    :workspace-data {:id current-file-id
                     :components {}
                     :pages []
@@ -66,7 +67,7 @@
   ([state label type] (sample-shape state type {}))
   ([state label type props]
    (let [page  (current-page state)
-         frame (cph/get-top-frame (:objects page))
+         frame (cph/get-frame (:objects page))
          shape (-> (cp/make-minimal-shape type)
                    (gsh/setup {:x 0 :y 0 :width 1 :height 1})
                    (merge props))]

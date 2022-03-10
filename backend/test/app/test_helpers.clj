@@ -30,6 +30,7 @@
    [expound.alpha :as expound]
    [integrant.core :as ig]
    [mockery.core :as mk]
+   [yetti.request :as yrq]
    [promesa.core :as p])
   (:import org.postgresql.ds.PGSimpleDataSource))
 
@@ -52,28 +53,38 @@
                    (assoc-in [:app.db/pool :uri] (:database-uri config))
                    (assoc-in [:app.db/pool :username] (:database-username config))
                    (assoc-in [:app.db/pool :password] (:database-password config))
-                   (assoc-in [[:app.main/main :app.storage.fs/backend] :directory] "/tmp/app/storage")
                    (dissoc :app.srepl/server
                            :app.http/server
                            :app.http/router
-                           :app.notifications/handler
-                           :app.loggers.sentry/reporter
+                           :app.http.awsns/handler
+                           :app.http.session/updater
                            :app.http.oauth/google
                            :app.http.oauth/gitlab
                            :app.http.oauth/github
                            :app.http.oauth/all
-                           :app.worker/scheduler
+                           :app.worker/executors-monitor
+                           :app.http.oauth/handler
+                           :app.notifications/handler
+                           :app.loggers.sentry/reporter
+                           :app.loggers.mattermost/reporter
+                           :app.loggers.loki/reporter
+                           :app.loggers.database/reporter
+                           :app.loggers.zmq/receiver
+                           :app.worker/cron
                            :app.worker/worker)
                    (d/deep-merge
-                    {:app.storage/storage {:backend :tmp}
-                     :app.tasks.file-media-gc/handler {:max-age (dt/duration 300)}}))
+                    {:app.tasks.file-media-gc/handler {:max-age (dt/duration 300)}}))
         _      (ig/load-namespaces config)
         system (-> (ig/prep config)
                    (ig/init))]
     (try
       (binding [*system* system
                 *pool*   (:app.db/pool system)]
-        (next))
+        (mk/with-mocks [mock1 {:target 'app.rpc.mutations.profile/derive-password
+                               :return identity}
+                        mock2 {:target 'app.rpc.mutations.profile/verify-password
+                               :return (fn [a b] {:valid (= a b)})}]
+          (next)))
       (finally
         (ig/halt! system)))))
 
@@ -250,7 +261,7 @@
   [expr]
   `(try
      {:error nil
-      :result ~expr}
+      :result (deref ~expr)}
      (catch Exception e#
        {:error (handle-error e#)
         :result nil})))

@@ -283,7 +283,6 @@
 
 (defn setup-interactions
   [file]
-
   (letfn [(add-interactions
             [file [id interactions]]
             (->> interactions
@@ -294,7 +293,6 @@
             (let [interactions (:interactions file)
                   file (dissoc file :interactions)]
               (->> interactions (reduce add-interactions file))))]
-
     (-> file process-interactions)))
 
 (defn resolve-media
@@ -318,6 +316,11 @@
     (->> (rx/of node)
          (rx/observe-on :async))))
 
+(defn media-node? [node]
+  (and (cip/shape? node)
+       (cip/has-image? node)
+       (not (cip/close? node))))
+
 (defn import-page
   [context file [page-id page-name content]]
   (let [nodes (->> content cip/node-seq)
@@ -329,12 +332,31 @@
         flows     (->> (get-in page-data [:options :flows])
                        (mapv #(update % :starting-frame resolve)))
         page-data (d/assoc-in-when page-data [:options :flows] flows)
-        file      (-> file (fb/add-page page-data))]
-    (->> (rx/from nodes)
-         (rx/filter cip/shape?)
-         (rx/merge-map (partial resolve-media context file-id))
-         (rx/reduce (partial process-import-node context) file)
-         (rx/map (comp fb/close-page setup-interactions)))))
+        file      (-> file (fb/add-page page-data))
+
+        ;; Preprocess nodes to parallel upload the images. Store the result in a table
+        ;; old-node => node with image
+        ;; that will be used in the second pass immediately
+        pre-process-images
+        (->> (rx/from nodes)
+             (rx/filter media-node?)
+             ;; TODO: this should be merge-map, but we disable the
+             ;; parallel upload until we resolve resource usage issues
+             ;; on backend.
+             (rx/mapcat
+              (fn [node]
+                (->> (resolve-media context file-id node)
+                     (rx/map (fn [result] [node result])))))
+             (rx/reduce conj {}))]
+
+    (->> pre-process-images
+         (rx/flat-map
+          (fn  [pre-proc]
+            (->> (rx/from nodes)
+                 (rx/filter cip/shape?)
+                 (rx/map (fn [node] (or (get pre-proc node) node)))
+                 (rx/reduce (partial process-import-node context) file)
+                 (rx/map (comp fb/close-page setup-interactions))))))))
 
 (defn import-component [context file node]
   (let [resolve      (:resolve context)
@@ -354,7 +376,7 @@
          (rx/filter cip/shape?)
          (rx/skip 1)
          (rx/skip-last 1)
-         (rx/merge-map (partial resolve-media context file-id))
+         (rx/mapcat (partial resolve-media context file-id))
          (rx/reduce (partial process-import-node context) file)
          (rx/map fb/finish-component))))
 
@@ -374,7 +396,6 @@
           (fn [[page-id page-name]]
             (->> (get-file context :page page-id)
                  (rx/map (fn [page-data] [page-id page-name page-data])))))
-
          (rx/concat-reduce (partial import-page context) file))))
 
 (defn process-library-colors
@@ -413,7 +434,7 @@
     (let [resolve (:resolve context)]
       (->> (get-file context :media-list)
            (rx/flat-map (comp d/kebab-keys cip/string->uuid))
-           (rx/merge-map
+           (rx/mapcat
             (fn [[id media]]
               (let [media (assoc media :id (resolve id))]
                 (->> (get-file context :media id media)

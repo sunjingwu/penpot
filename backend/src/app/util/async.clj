@@ -54,7 +54,6 @@
         (a/close! c)
         c))))
 
-
 (defmacro with-thread
   [executor & body]
   (if (= executor ::default)

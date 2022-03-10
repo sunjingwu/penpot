@@ -14,8 +14,12 @@
    [app.metrics :as mtx]
    [app.storage :as sto]
    [app.util.time :as dt]
+   [app.worker :as wrk]
    [clojure.spec.alpha :as s]
-   [integrant.core :as ig]))
+   [integrant.core :as ig]
+   [promesa.core :as p]
+   [promesa.exec :as px]
+   [yetti.response :as yrs]))
 
 (def ^:private cache-max-age
   (dt/duration {:hours 24}))
@@ -32,66 +36,83 @@
     res))
 
 (defn- get-file-media-object
-  [{:keys [pool] :as storage} id]
-  (let [id   (coerce-id id)
-        mobj (db/exec-one! pool ["select * from file_media_object where id=?" id])]
-    (when-not mobj
-      (ex/raise :type :not-found
-                :hint "object does not found"))
-      mobj))
+  [{:keys [pool executor] :as storage} id]
+  (px/with-dispatch executor
+    (let [id   (coerce-id id)
+          mobj (db/exec-one! pool ["select * from file_media_object where id=?" id])]
+      (when-not mobj
+        (ex/raise :type :not-found
+                  :hint "object does not found"))
+      mobj)))
 
 (defn- serve-object
+  "Helper function that returns the appropriate response depending on
+  the storage object backend type."
   [{:keys [storage] :as cfg} obj]
   (let [mdata   (meta obj)
         backend (sto/resolve-backend storage (:backend obj))]
     (case (:type backend)
       :db
-      {:status 200
-       :headers {"content-type" (:content-type mdata)
-                 "cache-control" (str "max-age=" (inst-ms cache-max-age))}
-       :body (sto/get-object-bytes storage obj)}
+      (p/let [body (sto/get-object-bytes storage obj)]
+        (yrs/response :status  200
+                      :body    body
+                      :headers {"content-type" (:content-type mdata)
+                                "cache-control" (str "max-age=" (inst-ms cache-max-age))}))
 
       :s3
-      (let [url (sto/get-object-url storage obj {:max-age signature-max-age})]
-        {:status 307
-         :headers {"location" (str url)
-                   "x-host"   (:host url)
-                   "cache-control" (str "max-age=" (inst-ms cache-max-age))}
-         :body ""})
+      (p/let [{:keys [host port] :as url} (sto/get-object-url storage obj {:max-age signature-max-age})]
+        (yrs/response :status  307
+                      :headers {"location" (str url)
+                                "x-host"   (cond-> host port (str ":" port))
+                                "cache-control" (str "max-age=" (inst-ms cache-max-age))}))
 
       :fs
-      (let [purl (u/uri (:assets-path cfg))
-            purl (u/join purl (sto/object->relative-path obj))]
-        {:status 204
-         :headers {"x-accel-redirect" (:path purl)
-                   "content-type" (:content-type mdata)
-                   "cache-control" (str "max-age=" (inst-ms cache-max-age))}
-         :body ""}))))
-
-(defn- generic-handler
-  [{:keys [storage] :as cfg} _request id]
-  (let [obj (sto/get-object storage id)]
-    (if obj
-      (serve-object cfg obj)
-      {:status 404 :body ""})))
+      (p/let [purl (u/uri (:assets-path cfg))
+              purl (u/join purl (sto/object->relative-path obj))]
+        (yrs/response :status  204
+                      :headers {"x-accel-redirect" (:path purl)
+                                "content-type" (:content-type mdata)
+                                "cache-control" (str "max-age=" (inst-ms cache-max-age))})))))
 
 (defn objects-handler
-  [cfg request]
-  (let [id (get-in request [:path-params :id])]
-    (generic-handler cfg request (coerce-id id))))
+  "Handler that servers storage objects by id."
+  [{:keys [storage executor] :as cfg} request respond raise]
+  (-> (px/with-dispatch executor
+        (p/let [id  (get-in request [:path-params :id])
+                id  (coerce-id id)
+                obj (sto/get-object storage id)]
+          (if obj
+            (serve-object cfg obj)
+            (yrs/response 404))))
+
+      (p/bind p/wrap)
+      (p/then' respond)
+      (p/catch raise)))
+
+(defn- generic-handler
+  "A generic handler helper/common code for file-media based handlers."
+  [{:keys [storage] :as cfg} request kf]
+  (p/let [id   (get-in request [:path-params :id])
+          mobj (get-file-media-object storage id)
+          obj  (sto/get-object storage (kf mobj))]
+    (if obj
+      (serve-object cfg obj)
+      (yrs/response 404))))
 
 (defn file-objects-handler
-  [{:keys [storage] :as cfg} request]
-  (let [id   (get-in request [:path-params :id])
-        mobj (get-file-media-object storage id)]
-    (generic-handler cfg request (:media-id mobj))))
+  "Handler that serves storage objects by file media id."
+  [cfg request respond raise]
+  (-> (generic-handler cfg request :media-id)
+      (p/then respond)
+      (p/catch raise)))
 
 (defn file-thumbnails-handler
-  [{:keys [storage] :as cfg} request]
-  (let [id   (get-in request [:path-params :id])
-        mobj (get-file-media-object storage id)]
-    (generic-handler cfg request (or (:thumbnail-id mobj) (:media-id mobj)))))
-
+  "Handler that serves storage objects by thumbnail-id and quick
+  fallback to file-media-id if no thumbnail is available."
+  [cfg request respond raise]
+  (-> (generic-handler cfg request #(or (:thumbnail-id %) (:media-id %)))
+      (p/then respond)
+      (p/catch raise)))
 
 ;; --- Initialization
 
@@ -101,10 +122,16 @@
 (s/def ::signature-max-age ::dt/duration)
 
 (defmethod ig/pre-init-spec ::handlers [_]
-  (s/keys :req-un [::storage ::mtx/metrics ::assets-path ::cache-max-age ::signature-max-age]))
+  (s/keys :req-un [::storage
+                   ::wrk/executor
+                   ::mtx/metrics
+                   ::assets-path
+                   ::cache-max-age
+                   ::signature-max-age]))
 
 (defmethod ig/init-key ::handlers
   [_ cfg]
-  {:objects-handler #(objects-handler cfg %)
-   :file-objects-handler #(file-objects-handler cfg %)
-   :file-thumbnails-handler #(file-thumbnails-handler cfg %)})
+  {:objects-handler (partial objects-handler cfg)
+   :file-objects-handler (partial file-objects-handler cfg)
+   :file-thumbnails-handler (partial file-thumbnails-handler cfg)})
+

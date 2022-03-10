@@ -13,7 +13,8 @@
    [app.util.template :as tmpl]
    [clojure.java.io :as io]
    [clojure.spec.alpha :as s]
-   [pretty-spec.core :as ps]))
+   [pretty-spec.core :as ps]
+   [yetti.response :as yrs]))
 
 (defn get-spec-str
   [k]
@@ -46,8 +47,8 @@
   [rpc]
   (let [context (prepare-context rpc)]
     (if (contains? cf/flags :backend-api-doc)
-      (fn [_]
-        {:status 200
-         :body (-> (io/resource "api-doc.tmpl")
-                   (tmpl/render context))})
-      (constantly {:status 404 :body ""}))))
+      (fn [_ respond _]
+        (respond (yrs/response 200 (-> (io/resource "api-doc.tmpl")
+                                       (tmpl/render context)))))
+      (fn [_ respond _]
+        (respond (yrs/response 404))))))

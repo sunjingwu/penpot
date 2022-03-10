@@ -6,6 +6,7 @@
 
 (ns app.main.data.workspace.shortcuts
   (:require
+   [app.main.data.events :as ev]
    [app.main.data.shortcuts :as ds]
    [app.main.data.workspace :as dw]
    [app.main.data.workspace.colors :as mdc]
@@ -17,11 +18,17 @@
    [app.main.data.workspace.transforms :as dwt]
    [app.main.data.workspace.undo :as dwu]
    [app.main.store :as st]
+   [app.main.ui.hooks.resize :as r]
    [app.util.dom :as dom]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Shortcuts
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn toggle-layout-flag
+  [flag]
+  (-> (dw/toggle-layout-flag flag)
+      (vary-meta assoc ::ev/origin "workspace-shortcuts")))
 
 ;; Shortcuts format https://github.com/ccampbell/mousetrap
 
@@ -38,13 +45,21 @@
                        :command (ds/a-mod "h")
                        :fn #(st/emit! (dw/go-to-layout :document-history))}
 
-   :toggle-palette    {:tooltip (ds/alt "P")
-                       :command (ds/a-mod "p")
-                       :fn #(st/emit! (dw/toggle-layout-flags :colorpalette))}
+   :toggle-colorpalette {:tooltip (ds/alt "P")
+                         :command (ds/a-mod "p")
+                         :fn #(do (r/set-resize-type! :bottom)
+                                  (st/emit! (dw/remove-layout-flag :textpalette)
+                                            (toggle-layout-flag :colorpalette)))}
+
+   :toggle-textpalette  {:tooltip (ds/alt "T")
+                         :command (ds/a-mod "t")
+                         :fn #(do (r/set-resize-type! :bottom)
+                                  (st/emit! (dw/remove-layout-flag :colorpalette)
+                                            (toggle-layout-flag :textpalette)))}
 
    :toggle-rules      {:tooltip (ds/meta-shift "R")
                        :command (ds/c-mod "shift+r")
-                       :fn #(st/emit! (dw/toggle-layout-flags :rules))}
+                       :fn #(st/emit! (toggle-layout-flag :rules))}
 
    :select-all        {:tooltip (ds/meta "A")
                        :command (ds/c-mod "a")
@@ -52,26 +67,30 @@
 
    :toggle-grid       {:tooltip (ds/meta "'")
                        :command (ds/c-mod "'")
-                       :fn #(st/emit! (dw/toggle-layout-flags :display-grid))}
+                       :fn #(st/emit! (toggle-layout-flag :display-grid))}
 
    :toggle-snap-grid  {:tooltip (ds/meta-shift "'")
                        :command (ds/c-mod "shift+'")
-                       :fn #(st/emit! (dw/toggle-layout-flags :snap-grid))}
+                       :fn #(st/emit! (toggle-layout-flag :snap-grid))}
+
+   :toggle-snap-guide {:tooltip (ds/meta-shift "G")
+                       :command (ds/c-mod "shift+G")
+                       :fn #(st/emit! (toggle-layout-flag :snap-guides))}
 
    :toggle-alignment  {:tooltip (ds/meta "\\")
                        :command (ds/c-mod "\\")
-                       :fn #(st/emit! (dw/toggle-layout-flags :dynamic-alignment))}
+                       :fn #(st/emit! (toggle-layout-flag :dynamic-alignment))}
 
    :toggle-scale-text {:tooltip "K"
                        :command "k"
-                       :fn #(st/emit! (dw/toggle-layout-flags :scale-text))}
+                       :fn #(st/emit! (toggle-layout-flag :scale-text))}
 
    :increase-zoom      {:tooltip "+"
-                        :command "+"
+                        :command ["+" "="]
                         :fn #(st/emit! (dw/increase-zoom nil))}
 
    :decrease-zoom      {:tooltip "-"
-                        :command "-"
+                        :command ["-" "_"]
                         :fn #(st/emit! (dw/decrease-zoom nil))}
 
    :group              {:tooltip (ds/meta "G")
@@ -177,7 +196,8 @@
 
    :cut                {:tooltip (ds/meta "X")
                         :command (ds/c-mod "x")
-                        :fn #(st/emit! (dw/copy-selected) dw/delete-selected)}
+                        :fn #(st/emit! (dw/copy-selected)
+                                       (dw/delete-selected))}
 
    :paste              {:tooltip (ds/meta "V")
                         :disabled true
@@ -186,7 +206,7 @@
 
    :delete             {:tooltip (ds/supr)
                         :command ["del" "backspace"]
-                        :fn #(st/emit! dw/delete-selected)}
+                        :fn #(st/emit! (dw/delete-selected))}
 
    :bring-forward      {:tooltip (ds/meta ds/up-arrow)
                         :command (ds/c-mod "up")
@@ -334,9 +354,17 @@
                           :command (ds/c-mod "alt+l")
                           :fn #(st/emit! (dw/toggle-proportion-lock))}
 
-   :create-artboard-from-selection   {:tooltip (ds/meta (ds/alt "G"))
-                          :command (ds/c-mod "alt+g")
-                          :fn #(st/emit! (dw/create-artboard-from-selection))}})
+   :create-artboard-from-selection {:tooltip (ds/meta (ds/alt "G"))
+                                    :command (ds/c-mod "alt+g")
+                                    :fn #(st/emit! (dw/create-artboard-from-selection))}
+
+   :hide-ui              {:tooltip "\\"
+                          :command "\\"
+                          :fn #(st/emit! (toggle-layout-flag :hide-ui))}
+
+   :toggle-focus-mode    {:command "f"
+                          :tooltip "F"
+                          :fn #(st/emit! (dw/toggle-focus-mode))}})
 
 (def opacity-shortcuts
   (into {} (->>

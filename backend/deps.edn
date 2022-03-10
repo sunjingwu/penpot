@@ -6,26 +6,26 @@
   org.zeromq/jeromq {:mvn/version "0.5.2"}
 
   com.taoensso/nippy {:mvn/version "3.1.1"}
-  com.github.luben/zstd-jni {:mvn/version "1.5.1-1"}
+  com.github.luben/zstd-jni {:mvn/version "1.5.2-2"}
   org.clojure/data.fressian {:mvn/version "1.0.0"}
 
-  io.prometheus/simpleclient {:mvn/version "0.14.1"}
-  io.prometheus/simpleclient_hotspot {:mvn/version "0.14.1"}
-  io.prometheus/simpleclient_jetty {:mvn/version "0.14.1"
+  io.prometheus/simpleclient {:mvn/version "0.15.0"}
+  io.prometheus/simpleclient_hotspot {:mvn/version "0.15.0"}
+  io.prometheus/simpleclient_jetty {:mvn/version "0.15.0"
                                     :exclusions [org.eclipse.jetty/jetty-server
                                                  org.eclipse.jetty/jetty-servlet]}
-  io.prometheus/simpleclient_httpserver {:mvn/version "0.14.1"}
+  io.prometheus/simpleclient_httpserver {:mvn/version "0.15.0"}
 
   io.lettuce/lettuce-core {:mvn/version "6.1.6.RELEASE"}
   java-http-clj/java-http-clj {:mvn/version "0.4.3"}
 
-  funcool/yetti {:git/tag "v4.0" :git/sha "59ed2a7"
+  funcool/yetti {:git/tag "v6.0" :git/sha "4c8690e"
                  :git/url "https://github.com/funcool/yetti.git"
                  :exclusions [org.slf4j/slf4j-api]}
 
-  com.github.seancorfield/next.jdbc {:mvn/version "1.2.761"}
-  metosin/reitit-ring {:mvn/version "0.5.15"}
-  org.postgresql/postgresql {:mvn/version "42.3.1"}
+  com.github.seancorfield/next.jdbc {:mvn/version "1.2.772"}
+  metosin/reitit-core {:mvn/version "0.5.16"}
+  org.postgresql/postgresql {:mvn/version "42.3.3"}
   com.zaxxer/HikariCP {:mvn/version "5.0.1"}
   funcool/datoteka {:mvn/version "2.0.0"}
 
@@ -39,11 +39,11 @@
   org.clojars.pntblnk/clj-ldap {:mvn/version "0.0.17"}
   integrant/integrant {:mvn/version "0.8.0"}
 
-  io.sentry/sentry {:mvn/version "5.5.2"}
+  io.sentry/sentry {:mvn/version "5.6.1"}
 
   ;; Pretty Print specs
   pretty-spec/pretty-spec {:mvn/version "0.1.4"}
-  software.amazon.awssdk/s3 {:mvn/version "2.17.111"}}
+  software.amazon.awssdk/s3 {:mvn/version "2.17.136"}}
 
  :paths ["src" "resources" "target/classes"]
  :aliases
@@ -59,12 +59,9 @@
    :extra-paths ["test" "dev"]}
 
   :build
-  {:extra-deps {io.github.clojure/tools.build {:git/tag "v0.7.4" :git/sha "ac442da"}}
+  {:extra-deps
+   {io.github.clojure/tools.build {:git/tag "v0.7.7" :git/sha "1474ad6"}}
    :ns-default build}
-
-  :kaocha
-  {:extra-deps {lambdaisland/kaocha {:mvn/version "RELEASE"}}
-   :main-opts ["-m" "kaocha.runner"]}
 
   :test
   {:extra-paths ["test"]

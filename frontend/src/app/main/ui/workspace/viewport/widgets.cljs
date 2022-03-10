@@ -6,9 +6,10 @@
 
 (ns app.main.ui.workspace.viewport.widgets
   (:require
+   [app.common.data.macros :as dm]
    [app.common.geom.point :as gpt]
    [app.common.geom.shapes :as gsh]
-   [app.common.pages :as cp]
+   [app.common.pages.helpers :as cph]
    [app.main.data.workspace :as dw]
    [app.main.data.workspace.interactions :as dwi]
    [app.main.refs :as refs]
@@ -161,11 +162,12 @@
         on-frame-enter  (unchecked-get props "on-frame-enter")
         on-frame-leave  (unchecked-get props "on-frame-leave")
         on-frame-select (unchecked-get props "on-frame-select")
-        frames    (cp/select-frames objects)]
+        frames          (cph/get-frames objects)]
 
     [:g.frame-titles
      (for [frame frames]
-       [:& frame-title {:frame frame
+       [:& frame-title {:key (dm/str "frame-title-" (:id frame))
+                        :frame frame
                         :selected? (contains? selected (:id frame))
                         :zoom zoom
                         :show-artboard-names? show-artboard-names?

@@ -73,7 +73,7 @@
         zoom   (:zoom local)
         frames (:frames page)
         frame  (get frames index)
-        fullscreen? (mf/deref refs/fullscreen?)
+        fullscreen? (mf/deref refs/viewer-fullscreen?)
         overlays (:overlays local)
 
         orig-frame
@@ -230,11 +230,14 @@
                  :section section}]
 
      [:div.viewer-content
+      [:div.thumbnail-close {:on-click #(st/emit! dv/close-thumbnails-panel)
+                             :class (dom/classnames :invisible (not (:show-thumbnails local false)))}]
       [:& thumbnails-panel {:frames frames
                             :show? (:show-thumbnails local false)
                             :page page
                             :index index}]
-      [:section.viewer-section {:id "viewer-section"}
+      [:section.viewer-section {:id "viewer-section"
+                                :class (if fullscreen? "fullscreen" "")}
        (cond
          (empty? frames)
          [:section.empty-state

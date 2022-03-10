@@ -6,8 +6,9 @@
 
 (ns app.main.ui.workspace.shapes.frame
   (:require
+   [app.common.colors :as cc]
    [app.common.data :as d]
-   [app.common.pages :as cp]
+   [app.common.pages.helpers :as cph]
    [app.main.ui.hooks :as hooks]
    [app.main.ui.shapes.frame :as frame]
    [app.main.ui.shapes.shape :refer [shape-container]]
@@ -41,7 +42,7 @@
   (let [{:keys [x y width height fill-color] :as shape} (obj/get props "shape")]
     (if (some? (:thumbnail shape))
       [:& frame/frame-thumbnail {:shape shape}]
-      [:rect {:x x :y y :width width :height height :style {:fill (or fill-color "var(--color-white)")}}])))
+      [:rect.frame-thumbnail {:x x :y y :width width :height height :style {:fill (or fill-color cc/white)}}])))
 
 (defn custom-deferred
   [component]
@@ -105,11 +106,19 @@
                   (hooks/use-equal-memo))
 
               all-children
-              (-> (cp/get-children-objects (:id shape) objects)
+              (-> (cph/get-children objects (:id shape))
                   (hooks/use-equal-memo))
 
+              all-svg-text?
+              (mf/use-memo
+               (mf/deps all-children)
+               (fn []
+                 (->> all-children
+                      (filter #(= :text (:type %)))
+                      (every? #(some? (:position-data %))))))
+
               show-thumbnail?
-              (and thumbnail? (some? (:thumbnail shape)))]
+              (and thumbnail? (some? (:thumbnail shape)) all-svg-text?)]
 
           [:g.frame-wrapper {:display (when (:hidden shape) "none")}
            [:> shape-container {:shape shape}

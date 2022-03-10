@@ -6,11 +6,10 @@
 
 (ns app.main.data.workspace.bool
   (:require
-   [app.common.colors :as clr]
    [app.common.data :as d]
    [app.common.geom.shapes :as gsh]
-   [app.common.pages :as cp]
    [app.common.pages.changes-builder :as cb]
+   [app.common.pages.helpers :as cph]
    [app.common.path.shapes-to-path :as stp]
    [app.common.uuid :as uuid]
    [app.main.data.workspace.changes :as dch]
@@ -22,12 +21,12 @@
 
 (defn selected-shapes
   [state]
-  (let [objects  (wsh/lookup-page-objects state)]
+  (let [objects (wsh/lookup-page-objects state)]
     (->> (wsh/lookup-selected state)
-         (cp/clean-loops objects)
-         (map #(get objects %))
-         (filter #(not= :frame (:type %)))
-         (map #(assoc % ::index (cp/position-on-parent (:id %) objects)))
+         (cph/clean-loops objects)
+         (map (d/getf objects))
+         (remove cph/frame-shape?)
+         (map #(assoc % ::index (cph/get-position-on-parent objects (:id %))))
          (sort-by ::index))))
 
 (defn create-bool-data
@@ -35,8 +34,8 @@
   (let [shapes (mapv #(stp/convert-to-path % objects) shapes)
         head (if (= bool-type :difference) (first shapes) (last shapes))
         head (cond-> head
-               (and (contains? head :svg-attrs) (nil? (:fill-color head)))
-               (assoc :fill-color clr/black))
+               (and (contains? head :svg-attrs) (empty? (:fills head)))
+               (assoc :fills stp/default-bool-fills))
 
         head-data (select-keys head stp/style-properties)
 
@@ -51,7 +50,7 @@
             (merge head-data)
             (gsh/update-bool-selrect shapes objects))]
 
-    [bool-shape (cp/position-on-parent (:id head) objects)]))
+    [bool-shape (cph/get-position-on-parent objects (:id head))]))
 
 (defn group->bool
   [group bool-type objects]
@@ -61,8 +60,8 @@
                     (mapv #(stp/convert-to-path % objects)))
         head (if (= bool-type :difference) (first shapes) (last shapes))
         head (cond-> head
-               (and (contains? head :svg-attrs) (nil? (:fill-color head)))
-               (assoc :fill-color clr/black))
+               (and (contains? head :svg-attrs) (empty? (:fills head)))
+               (assoc :fills stp/default-bool-fills))
         head-data (select-keys head stp/style-properties)]
 
     (-> group
@@ -99,7 +98,7 @@
                 shape-id (:id boolean-data)
                 changes (-> (cb/empty-changes it page-id)
                             (cb/with-objects objects)
-                            (cb/add-obj boolean-data index)
+                            (cb/add-obj boolean-data {:index index})
                             (cb/change-parent shape-id shapes))]
             (rx/of (dch/commit-changes changes)
                    (dwc/select-shapes (d/ordered-set shape-id)))))))))

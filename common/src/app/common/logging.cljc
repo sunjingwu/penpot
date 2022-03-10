@@ -7,8 +7,10 @@
 (ns app.common.logging
   (:require
    [app.common.exceptions :as ex]
+   [app.common.uuid :as uuid]
    [clojure.pprint :refer [pprint]]
    [cuerdas.core :as str]
+   [fipp.edn :as fpp]
    #?(:clj [io.aviso.exception :as ie])
    #?(:cljs [goog.log :as glog]))
   #?(:cljs (:require-macros [app.common.logging])
@@ -34,12 +36,12 @@
        (reduce-kv #(.with ^MapMessage %1 (name %2) %3) message m))))
 
 #?(:clj
-  (def logger-context
-    (LogManager/getContext false)))
+   (def logger-context
+     (LogManager/getContext false)))
 
 #?(:clj
-  (def logging-agent
-    (agent nil :error-mode :continue)))
+   (def logging-agent
+     (agent nil :error-mode :continue)))
 
 (defn- simple-prune
   ([s] (simple-prune s (* 1024 1024)))
@@ -52,22 +54,16 @@
    (defn stringify-data
      [val]
      (cond
-       (instance? clojure.lang.Named val)
-       (name val)
-
-       (instance? Throwable val)
-       (binding [ie/*app-frame-names* [#"app.*"]
-                 ie/*fonts* nil
-                 ie/*traditional* true]
-         (ie/format-exception val nil))
-
        (string? val)
        val
 
+       (instance? clojure.lang.Named val)
+       (name val)
+
        (coll? val)
-       (binding [clojure.pprint/*print-right-margin* 200]
-         (-> (with-out-str (pprint val))
-             (simple-prune (* 1024 1024 3))))
+       (binding [*print-level* 8
+                 *print-length* 25]
+         (with-out-str (fpp/pprint val {:width 200})))
 
        :else
        (str val))))
@@ -82,12 +78,6 @@
                         [(stringify-data key)
                          (stringify-data val)])))
            data)))
-
-#?(:clj
-   (defn set-context!
-     [data]
-     (ThreadContext/putAll (data->context-map data))
-     nil))
 
 #?(:clj
    (defmacro with-context
@@ -163,13 +153,13 @@
      (.isEnabled ^Logger logger ^Level level)))
 
 (defmacro log
-  [& {:keys [level cause ::logger ::async ::raw] :or {async true} :as props}]
+  [& {:keys [level cause ::logger ::async ::raw ::context] :or {async true} :as props}]
   (if (:ns &env) ; CLJS
     `(write-log! ~(or logger (str *ns*))
                  ~level
                  ~cause
-                 (or ~raw ~(dissoc props :level :cause ::logger ::raw)))
-    (let [props      (dissoc props :level :cause ::logger ::async ::raw)
+                 (or ~raw ~(dissoc props :level :cause ::logger ::raw ::context)))
+    (let [props      (dissoc props :level :cause ::logger ::async ::raw ::context)
           logger     (or logger (str *ns*))
           logger-sym (gensym "log")
           level-sym  (gensym "log")]
@@ -177,12 +167,11 @@
              ~level-sym  (get-level ~level)]
          (when (enabled? ~logger-sym ~level-sym)
            ~(if async
-              `(->> (ThreadContext/getImmutableContext)
-                    (send-off logging-agent
-                              (fn [_# cdata#]
-                                (with-context (into {:cause ~cause} cdata#)
-                                  (->> (or ~raw (build-map-message ~props))
-                                       (write-log! ~logger-sym ~level-sym ~cause))))))
+              `(send-off logging-agent
+                         (fn [_#]
+                           (with-context (into {:id (uuid/next)} ~context)
+                            (->> (or ~raw (build-map-message ~props))
+                                 (write-log! ~logger-sym ~level-sym ~cause)))))
 
               `(let [message# (or ~raw (build-map-message ~props))]
                  (write-log! ~logger-sym ~level-sym ~cause message#))))))))
@@ -348,5 +337,3 @@
        (glog/removeHandler l default-console-handler)
        (glog/addHandler l default-console-handler)
        nil)))
-
-

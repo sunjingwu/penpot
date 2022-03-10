@@ -16,10 +16,9 @@
    ;; because of some strange interaction with cljs.spec.alpha and
    ;; modules splitting.
    [app.common.exceptions :as ex]
-   [app.common.geom.point :as gpt]
    [app.common.uuid :as uuid]
    [cuerdas.core :as str]
-   [expound.alpha]))
+   [expound.alpha :as expound]))
 
 (s/check-asserts true)
 
@@ -110,7 +109,6 @@
 (s/def ::not-empty-string (s/and string? #(not (str/empty? %))))
 (s/def ::url string?)
 (s/def ::fn fn?)
-(s/def ::point gpt/point?)
 (s/def ::id ::uuid)
 
 (defn bytes?
@@ -163,14 +161,14 @@
 
 (def email-re #"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
 
+(defn parse-email
+  [s]
+  (some->> s (re-seq email-re) first))
+
 (s/def ::email
   (s/conformer
    (fn [v]
-     (if (string? v)
-       (if-let [matches (re-seq email-re v)]
-         (first matches)
-         (do ::s/invalid))
-       ::s/invalid))
+     (or (parse-email v) ::s/invalid))
    str))
 
 (s/def ::set-of-emails
@@ -257,7 +255,7 @@
       (let [data (s/explain-data spec data)]
         (throw (ex/error :type :validation
                          :code :spec-validation
-                         ::s/problems (::s/problems data)))))
+                         ::ex/data data))))
     result))
 
 (defmacro instrument!
@@ -270,3 +268,12 @@
                       (spec-assert* ~spec params# ~message mdata#)
                       (apply origf# params#)))))))
 
+(defn pretty-explain
+  ([data] (pretty-explain data nil))
+  ([data {:keys [max-problems] :or {max-problems 10}}]
+   (when (and (::s/problems data)
+              (::s/value data)
+              (::s/spec data))
+     (binding [s/*explain-out* expound/printer]
+       (with-out-str
+         (s/explain-out (update data ::s/problems #(take max-problems %))))))))

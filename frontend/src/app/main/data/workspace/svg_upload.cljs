@@ -12,7 +12,7 @@
    [app.common.geom.point :as gpt]
    [app.common.geom.shapes :as gsh]
    [app.common.math :as mth]
-   [app.common.pages :as cp]
+   [app.common.pages.helpers :as cph]
    [app.common.spec :refer [max-safe-int min-safe-int]]
    [app.common.uuid :as uuid]
    [app.main.data.workspace.changes :as dch]
@@ -29,7 +29,7 @@
 
 (defonce default-rect {:x 0 :y 0 :width 1 :height 1 :rx 0 :ry 0})
 (defonce default-circle {:r 0 :cx 0 :cy 0})
-(defonce default-image {:x 0 :y 0 :width 1 :height 1})
+(defonce default-image {:x 0 :y 0 :width 1 :height 1 :rx 0 :ry 0})
 
 (defn- assert-valid-num [attr num]
   (when (or (nil? num)
@@ -73,51 +73,54 @@
 (defn setup-fill [shape]
   (cond-> shape
     ;; Color present as attribute
-    (uc/color? (get-in shape [:svg-attrs :fill]))
+    (uc/color? (str/trim (get-in shape [:svg-attrs :fill])))
     (-> (update :svg-attrs dissoc :fill)
-        (assoc :fill-color (-> (get-in shape [:svg-attrs :fill])
-                               (uc/parse-color))))
+        (assoc-in [:fills 0 :fill-color] (-> (get-in shape [:svg-attrs :fill])
+                                             (str/trim)
+                                             (uc/parse-color))))
 
     ;; Color present as style
-    (uc/color? (get-in shape [:svg-attrs :style :fill]))
+    (uc/color? (str/trim (get-in shape [:svg-attrs :style :fill])))
     (-> (update-in [:svg-attrs :style] dissoc :fill)
-        (assoc :fill-color (-> (get-in shape [:svg-attrs :style :fill])
-                               (uc/parse-color))))
+        (assoc-in [:fills 0 :fill-color] (-> (get-in shape [:svg-attrs :style :fill])
+                                             (str/trim)
+                                             (uc/parse-color))))
 
     (get-in shape [:svg-attrs :fill-opacity])
     (-> (update :svg-attrs dissoc :fill-opacity)
-        (assoc :fill-opacity (-> (get-in shape [:svg-attrs :fill-opacity])
-                                 (d/parse-double))))
+        (assoc-in [:fills 0 :fill-opacity] (-> (get-in shape [:svg-attrs :fill-opacity])
+                                                (d/parse-double))))
 
     (get-in shape [:svg-attrs :style :fill-opacity])
     (-> (update-in [:svg-attrs :style] dissoc :fill-opacity)
-        (assoc :fill-opacity (-> (get-in shape [:svg-attrs :style :fill-opacity])
-                                 (d/parse-double))))))
+        (assoc-in [:fills 0 :fill-opacity] (-> (get-in shape [:svg-attrs :style :fill-opacity])
+                                                (d/parse-double))))))
 
 (defn setup-stroke [shape]
   (let [stroke-linecap (-> (or (get-in shape [:svg-attrs :stroke-linecap])
                                (get-in shape [:svg-attrs :style :stroke-linecap]))
                            ((d/nilf str/trim))
                            ((d/nilf keyword)))
+
         shape
         (cond-> shape
-          (uc/color? (get-in shape [:svg-attrs :stroke]))
+          (uc/color? (str/trim (get-in shape [:svg-attrs :stroke])))
           (-> (update :svg-attrs dissoc :stroke)
-              (assoc :stroke-color (get-in shape [:svg-attrs :stroke])))
+              (assoc-in [:strokes 0 :stroke-color] (get-in shape [:svg-attrs :stroke])))
 
-          (uc/color? (get-in shape [:svg-attrs :style :stroke]))
+          (uc/color? (str/trim (get-in shape [:svg-attrs :style :stroke])))
           (-> (update-in [:svg-attrs :style] dissoc :stroke)
-              (assoc :stroke-color (get-in shape [:svg-attrs :style :stroke])))
+              (assoc-in [:strokes 0 :stroke-color] (get-in shape [:svg-attrs :style :stroke])))
 
           (get-in shape [:svg-attrs :stroke-width])
           (-> (update :svg-attrs dissoc :stroke-width)
-              (assoc :stroke-width (-> (get-in shape [:svg-attrs :stroke-width])
-                                       (d/parse-double))))
+              (assoc-in [:strokes 0 :stroke-width] (-> (get-in shape [:svg-attrs :stroke-width])
+                                                       (d/parse-double))))
 
           (get-in shape [:svg-attrs :style :stroke-width])
           (-> (update-in [:svg-attrs :style] dissoc :stroke-width)
-              (assoc :stroke-width (-> (get-in shape [:svg-attrs :style :stroke-width])
-                                       (d/parse-double))))
+              (assoc-in [:strokes 0 :stroke-width] (-> (get-in shape [:svg-attrs :style :stroke-width])
+                                                       (d/parse-double))))
 
           (and stroke-linecap (= (:type shape) :path))
           (-> (update-in [:svg-attrs :style] dissoc :stroke-linecap)
@@ -126,8 +129,8 @@
                 (assoc :stroke-cap-start stroke-linecap
                        :stroke-cap-end   stroke-linecap))))]
 
-    (if (d/any-key? shape :stroke-color :stroke-opacity :stroke-width :stroke-cap-start :stroke-cap-end)
-      (merge {:stroke-style :svg} shape)
+    (if (d/any-key? (get-in [:strokes 0] shape) :stroke-color :stroke-opacity :stroke-width :stroke-cap-start :stroke-cap-end)
+      (assoc-in shape [:strokes 0 :stroke-style] :svg)
       shape)))
 
 (defn setup-opacity [shape]
@@ -267,8 +270,8 @@
          :name name
          :frame-id frame-id}
         (cond->
-            (contains? attrs :rx) (assoc :rx (d/parse-double (:rx attrs)))
-            (contains? attrs :ry) (assoc :ry (d/parse-double (:ry attrs))))
+            (contains? attrs :rx) (assoc :rx (d/parse-double (:rx attrs 0)))
+            (contains? attrs :ry) (assoc :ry (d/parse-double (:ry attrs 0))))
 
         (merge metadata)
         (assoc :svg-viewbox (select-keys rect [:x :y :width :height]))
@@ -378,9 +381,11 @@
                         :polygon     (create-path-shape name frame-id svg-data (-> element-data usvg/polygon->path))
                         :line        (create-path-shape name frame-id svg-data (-> element-data usvg/line->path))
                         :image       (create-image-shape name frame-id svg-data element-data)
-                        #_other      (create-raw-svg name frame-id svg-data element-data))
+                        #_other      (create-raw-svg name frame-id svg-data element-data)))
 
-                      )
+            shape (assoc shape :fills [])
+            shape (assoc shape :strokes [])
+
             shape (when (some? shape)
                     (-> shape
                         (assoc :svg-defs (select-keys (:defs svg-data) references))
@@ -454,9 +459,9 @@
     ptk/WatchEvent
     (watch [it state _]
       (try
-        (let [page-id (:current-page-id state)
-              objects (wsh/lookup-page-objects state page-id)
-              frame-id (cp/frame-id-by-position objects position)
+        (let [page-id  (:current-page-id state)
+              objects  (wsh/lookup-page-objects state page-id)
+              frame-id (cph/frame-id-by-position objects position)
               selected (wsh/lookup-selected state)
 
               [vb-x vb-y vb-width vb-height] (svg-dimensions svg-data)
